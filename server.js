@@ -9,12 +9,8 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.static('public'));
-// Expõe a pasta 'fotos' publicamente para o jogo carregar as imagens
 app.use('/fotos', express.static(path.join(__dirname, 'fotos')));
 
-// ==========================================
-// ESTADO DO JOGO NO SERVIDOR
-// ==========================================
 let gameState = 'LOBBY'; 
 let players = {};
 let startTime = 0;
@@ -28,6 +24,15 @@ const map = {
         {x: 400, y: 550, w: 600, h: 150},
         {x: 0, y: 400, w: 100, h: 20}, {x: 1300, y: 400, w: 100, h: 20}
     ],
+    // Móveis fictícios que bloqueiam o caminho do Chefe e dos jogadores
+    furniture: [
+        {x: 80, y: 80, w: 90, h: 50, type: 'desk'},
+        {x: 1210, y: 80, w: 90, h: 50, type: 'desk'},
+        {x: 350, y: 270, w: 100, h: 50, type: 'desk'},
+        {x: 950, y: 270, w: 100, h: 50, type: 'desk'},
+        {x: 480, y: 610, w: 110, h: 50, type: 'desk'},
+        {x: 810, y: 610, w: 110, h: 50, type: 'desk'}
+    ],
     hidingSpots: [
         {x: 50, y: 50, w: 60, h: 60}, {x: 1280, y: 50, w: 60, h: 60},
         {x: 50, y: 800, w: 60, h: 60}, {x: 1280, y: 800, w: 60, h: 60},
@@ -36,6 +41,11 @@ const map = {
     key: { x: 700, y: 450, w: 30, h: 30, collected: false },
     exit: { x: 650, y: 860, w: 100, h: 20, locked: true }
 };
+
+// Adiciona os móveis na lista de colisões para atrapalhar a perseguição
+map.furniture.forEach(f => {
+    map.walls.push({ x: f.x, y: f.y, w: f.w, h: f.h });
+});
 
 let boss = {
     x: 700, y: 700, w: 32, h: 32, state: 'PATROL', angle: Math.PI, targetId: null, lastKnownPos: null,
@@ -56,17 +66,11 @@ const searchPhrases = [
     "cadê o Léo?"
 ];
 
-// ==========================================
-// UTILIDADES
-// ==========================================
 function rectIntersect(r1, r2) {
     return !(r2.x > r1.x + r1.w || r2.x + r2.w < r1.x || r2.y > r1.y + r1.h || r2.y + r2.h < r1.y);
 }
 function dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
 
-// ==========================================
-// CONEXÕES SOCKET.IO
-// ==========================================
 const colors = ['#00bcd4', '#e91e63', '#ff9800', '#9c27b0', '#8bc34a', '#ffeb3b'];
 let colorIndex = 0;
 
@@ -77,7 +81,6 @@ io.on('connection', (socket) => {
         return;
     }
 
-    // Envia a lista de fotos disponíveis na pasta /fotos para o cliente
     let photoFiles = [];
     try {
         const fotosDir = path.join(__dirname, 'fotos');
@@ -180,15 +183,11 @@ function resetGame() {
     io.emit('resetToLobby');
 }
 
-// ==========================================
-// LOOP DO SERVIDOR (30fps)
-// ==========================================
 setInterval(() => {
     if(gameState !== 'PLAYING') return;
 
     let pList = Object.values(players);
 
-    // 1. Jogadores
     pList.forEach(p => {
         if(p.isHidden) {
             p.stamina = Math.min(p.stamina + 0.4, 100); p.isMoving = false; return;
@@ -215,7 +214,6 @@ setInterval(() => {
         if(!hitX) p.x = nextX; if(!hitY) p.y = nextY;
     });
 
-    // 2. Chefe (IA)
     let speed = boss.state === 'CHASE' ? 7.2 : 3;
     let targetX = boss.x, targetY = boss.y;
 
