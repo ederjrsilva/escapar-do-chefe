@@ -287,9 +287,11 @@ function drawBoss(b) {
     ctx.fillStyle = '#d32f2f'; ctx.fillRect(cx - 8 + dirX, cy - 30, 4, 4); ctx.fillRect(cx + 4 + dirX, cy - 30, 4, 4);
     ctx.strokeStyle = '#333'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx - 10 + dirX, cy - 33); ctx.lineTo(cx - 3 + dirX, cy - 30); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx + 10 + dirX, cy - 33); ctx.lineTo(cx + 3 + dirX, cy - 30); ctx.stroke();
 
-    if (bossSpeechTimer > 0) {
-        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.roundRect(cx - 70, cy - 80, 140, 30, 10); ctx.fill();
+    // Balão de fala dinâmico controlado pelo servidor
+    if (b.speechTimer > 0 && b.currentSpeech) {
+        // Aumentei um pouco a largura do balão para caber os nomes confortavelmente
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.roundRect(cx - 100, cy - 80, 200, 30, 10); ctx.fill();
         ctx.fillStyle = '#000'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center';
-        ctx.fillText("Te achei, nó cego!", cx, cy - 60); ctx.textAlign = 'left'; 
+        ctx.fillText(b.currentSpeech, cx, cy - 60); ctx.textAlign = 'left'; 
     }
 }
