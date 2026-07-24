@@ -3,17 +3,12 @@ const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
 let gameState = 'LOBBY';
-let staticMap = null; // Recebe o mapa do servidor 1x
-let syncData = null;  // Atualizações constantes
+let staticMap = null;
+let syncData = null;
 let myId = null;
-//let bossSpeechTimer = 0;
 
-// Imagens cacheadas para não recarregar
 const avatars = {}; 
 
-// ==========================================
-// ÁUDIO (Mesmo sistema, acionado por rede)
-// ==========================================
 const AudioSys = {
     ctx: new (window.AudioContext || window.webkitAudioContext)(),
     playTone(freq, type, duration, vol=0.1) {
@@ -40,9 +35,6 @@ const AudioSys = {
     }
 };
 
-// ==========================================
-// CONTROLES UNIVERSAIS (W,A,S,D)
-// ==========================================
 const keys = { up: false, down: false, left: false, right: false, run: false };
 window.addEventListener('keydown', (e) => {
     let key = e.code; let updated = false;
@@ -52,7 +44,6 @@ window.addEventListener('keydown', (e) => {
     if(key === 'KeyD' || key === 'ArrowRight') { keys.right = true; updated = true; }
     if(key === 'ShiftLeft' || key === 'ShiftRight') { keys.run = true; updated = true; }
     
-    // Ações disparadas uma vez só
     if(key === 'Space' && gameState === 'PLAYING') socket.emit('action', 'HIDE');
     if(key === 'KeyE' && gameState === 'PLAYING') socket.emit('action', 'INTERACT');
 
@@ -69,9 +60,6 @@ window.addEventListener('keyup', (e) => {
     if(updated && gameState === 'PLAYING') socket.emit('input', keys);
 });
 
-// ==========================================
-// SOCKET EVENTS
-// ==========================================
 socket.on('connect', () => { myId = socket.id; });
 
 socket.on('lobbyUpdate', (playersArray) => {
@@ -81,7 +69,6 @@ socket.on('lobbyUpdate', (playersArray) => {
     playersArray.forEach(p => {
         let isMe = p.id === myId;
         
-        // Cachear imagem localmente
         if (p.avatar && !avatars[p.id]) {
             let img = new Image(); img.src = p.avatar;
             avatars[p.id] = img;
@@ -103,7 +90,6 @@ socket.on('lobbyUpdate', (playersArray) => {
                 if(file) {
                     const reader = new FileReader();
                     reader.onload = (ev) => {
-                        // Comprime e corta a imagem antes de enviar (Evita crashes e lag)
                         let tempImg = new Image();
                         tempImg.onload = () => {
                             let cvs = document.createElement('canvas');
@@ -128,14 +114,9 @@ socket.on('lobbyUpdate', (playersArray) => {
         grid.appendChild(card);
     });
 
-    // Se todos prontos, avisa visualmente
     let allReady = playersArray.length > 0 && playersArray.every(p => p.ready);
     let startBtn = document.getElementById('btn-start');
-    if (allReady) {
-        startBtn.innerText = "Iniciando em breve...";
-    } else {
-        startBtn.innerText = "Aguardando todos ficarem Prontos...";
-    }
+    startBtn.innerText = allReady ? "Iniciando em breve..." : "Aguardando todos ficarem Prontos...";
 });
 
 socket.on('gameStart', (mapData) => {
@@ -146,14 +127,11 @@ socket.on('gameStart', (mapData) => {
     requestAnimationFrame(renderLoop);
 });
 
-socket.on('syncState', (state) => {
-    syncData = state;
-});
+socket.on('syncState', (state) => { syncData = state; });
 
 socket.on('bossAlert', (msg) => {
     AudioSys.alert();
     AudioSys.bossSpeak();
-    bossSpeechTimer = 180; // Duração do balão
     let alertDiv = document.getElementById('hud-alert');
     document.getElementById('alert-text').innerText = msg;
     alertDiv.classList.remove('hidden');
@@ -171,34 +149,24 @@ socket.on('gameOver', (data) => {
     document.getElementById('end-msg').innerText = data.msg;
 });
 
-socket.on('resetToLobby', () => {
-    window.location.reload(); // Forma mais segura de resetar todos pro Lobby original
-});
-
+socket.on('resetToLobby', () => { window.location.reload(); });
 document.getElementById('btn-restart').onclick = () => { window.location.reload(); };
 
-// ==========================================
-// MOTOR DE RENDERIZAÇÃO
-// ==========================================
 function renderLoop() {
     if(gameState !== 'PLAYING' || !syncData) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawMap();
 
-    // Organizar por Y para sobreposição 3D fake
     let entities = [ ...Object.values(syncData.players), syncData.boss ].sort((a,b) => a.y - b.y);
     entities.forEach(e => {
         if(e.hasOwnProperty('stamina')) drawPlayer(e);
         else drawBoss(e);
     });
 
-    // Atualiza HUD Tempo
     let min = String(Math.floor(syncData.time / 60)).padStart(2, '0');
     let sec = String(syncData.time % 60).padStart(2, '0');
     document.getElementById('hud-time').innerText = `${min}:${sec}`;
-
-    if(bossSpeechTimer > 0) bossSpeechTimer--;
 
     requestAnimationFrame(renderLoop);
 }
@@ -246,7 +214,6 @@ function drawPlayer(p) {
 
     ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y - 5, p.w, p.h + 10);
 
-   // Só desenha se a imagem já existir e estiver 100% carregada
     if (avatars[p.id] && avatars[p.id].complete) {
         ctx.save(); ctx.beginPath(); ctx.arc(cx, cy - 20, 20, 0, Math.PI*2); ctx.clip();
         ctx.drawImage(avatars[p.id], cx - 20, cy - 40, 40, 40); ctx.restore();
@@ -287,10 +254,8 @@ function drawBoss(b) {
     ctx.fillStyle = '#d32f2f'; ctx.fillRect(cx - 8 + dirX, cy - 30, 4, 4); ctx.fillRect(cx + 4 + dirX, cy - 30, 4, 4);
     ctx.strokeStyle = '#333'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx - 10 + dirX, cy - 33); ctx.lineTo(cx - 3 + dirX, cy - 30); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx + 10 + dirX, cy - 33); ctx.lineTo(cx + 3 + dirX, cy - 30); ctx.stroke();
 
-    // Balão de fala dinâmico controlado pelo servidor
     if (b.speechTimer > 0 && b.currentSpeech) {
-        // Aumentei um pouco a largura do balão para caber os nomes confortavelmente
-        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.roundRect(cx - 100, cy - 80, 200, 30, 10); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.roundRect(cx - 110, cy - 80, 220, 30, 10); ctx.fill();
         ctx.fillStyle = '#000'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center';
         ctx.fillText(b.currentSpeech, cx, cy - 60); ctx.textAlign = 'left'; 
     }
