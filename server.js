@@ -11,9 +11,10 @@ app.use(express.static('public'));
 // ==========================================
 // ESTADO DO JOGO NO SERVIDOR
 // ==========================================
-let gameState = 'LOBBY'; // LOBBY, PLAYING, GAMEOVER
+let gameState = 'LOBBY'; 
 let players = {};
 let startTime = 0;
+let nextPlayerNumber = 1; // Controla o número sequencial dos jogadores para evitar duplicatas
 
 const map = {
     walls: [
@@ -41,7 +42,6 @@ let boss = {
     speechCooldown: 0
 };
 
-// Lista de nomes para ele procurar aleatoriamente
 const searchPhrases = [
     "cadê o Rickson?",
     "cadê a Marilyn?",
@@ -65,7 +65,6 @@ function dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
 // ==========================================
 const colors = ['#00bcd4', '#e91e63', '#ff9800', '#9c27b0', '#8bc34a', '#ffeb3b'];
 let colorIndex = 0;
-let nextPlayerNumber = 1; // <-- ADICIONE ESTA LINHA AQUI
 
 io.on('connection', (socket) => {
     if(gameState !== 'LOBBY' || Object.keys(players).length >= 6) {
@@ -74,9 +73,8 @@ io.on('connection', (socket) => {
         return;
     }
 
-    // Criar jogador
     players[socket.id] = {
-        id: socket.id, ready: false, name: `Jogador ${Object.keys(players).length + 1}`,
+        id: socket.id, ready: false, name: `Jogador ${nextPlayerNumber}`,
         color: colors[colorIndex % colors.length], avatar: null,
         x: 80 + (Object.keys(players).length * 80), y: 80, w: 26, h: 26,
         stamina: 100, isHidden: false, isMoving: false,
@@ -120,12 +118,10 @@ io.on('connection', (socket) => {
         }
 
         if(actionType === 'INTERACT' && !p.isHidden) {
-            // Pegar chave
             if(!map.key.collected && rectIntersect(p, map.key)) {
                 map.key.collected = true; map.exit.locked = false;
                 io.emit('audioPlay', 'item');
             }
-            // Fugir
             if(rectIntersect(p, {x: map.exit.x, y: map.exit.y - 20, w: map.exit.w, h: map.exit.h + 20}) && !map.exit.locked) {
                 delete players[socket.id];
                 socket.emit('gameOver', { won: true, msg: "Você escapou em segurança!" });
@@ -138,7 +134,7 @@ io.on('connection', (socket) => {
         delete players[socket.id];
         io.emit('lobbyUpdate', Object.values(players));
         if(Object.keys(players).length === 0) {
-            nextPlayerNumber = 1; // <-- ADICIONE ESTA LINHA AQUI
+            nextPlayerNumber = 1;
             resetGame();
         }
     });
@@ -157,26 +153,26 @@ function resetGame() {
     gameState = 'LOBBY';
     map.key.collected = false; 
     map.exit.locked = true;
-    
-    // RESET: Volta o chefe para o meio do mapa
     boss.x = 700; 
     boss.y = 700;
     boss.state = 'PATROL'; 
     boss.targetId = null;
     boss.wpIndex = 0;
-    
+    boss.currentSpeech = "";
+    boss.speechTimer = 0;
+    boss.speechCooldown = 0;
     io.emit('resetToLobby');
 }
 
 // ==========================================
-// LOOP DO SERVIDOR (Motor do Jogo - 30fps)
+// LOOP DO SERVIDOR (30fps)
 // ==========================================
 setInterval(() => {
     if(gameState !== 'PLAYING') return;
 
     let pList = Object.values(players);
 
-    // 1. Atualiza Jogadores
+    // 1. Jogadores
     pList.forEach(p => {
         if(p.isHidden) {
             p.stamina = Math.min(p.stamina + 0.4, 100); p.isMoving = false; return;
@@ -202,8 +198,8 @@ setInterval(() => {
         });
         if(!hitX) p.x = nextX; if(!hitY) p.y = nextY;
     });
- 
-    // 2. Atualiza Chefe (IA)
+
+    // 2. Chefe (IA)
     let speed = boss.state === 'CHASE' ? 7.2 : 3;
     let targetX = boss.x, targetY = boss.y;
 
@@ -223,21 +219,19 @@ setInterval(() => {
         } else boss.state = 'PATROL';
     }
 
-    // Controle de fala intermitente enquanto procura/patrulha
+    // Falas intermitentes enquanto patrulha/procura
     if (boss.state === 'PATROL' || boss.state === 'SEARCH') {
         if (boss.speechCooldown > 0) {
             boss.speechCooldown--;
         } else if (boss.speechTimer <= 0) {
-            // Escolhe uma frase aleatória da lista
             let randomPhrase = searchPhrases[Math.floor(Math.random() * searchPhrases.length)];
             boss.currentSpeech = randomPhrase;
-            boss.speechTimer = 90; // Fica visível por ~3 segundos (a 30fps)
-            boss.speechCooldown = 150 + Math.random() * 150; // Próxima fala entre 5 a 10 segundos
-            io.emit('audioPlay', 'bossSpeak'); // Som abafado de fala
+            boss.speechTimer = 90;
+            boss.speechCooldown = 150 + Math.random() * 150;
+            io.emit('audioPlay', 'bossSpeak');
         }
     }
 
-    // Decrementa o timer da fala atual
     if (boss.speechTimer > 0) {
         boss.speechTimer--;
     } else if (boss.speechTimer === 0 && boss.state !== 'CHASE') {
@@ -266,7 +260,7 @@ setInterval(() => {
             let angleDiff = Math.abs(boss.angle - angleTo);
             if(angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
             if(angleDiff < Math.PI / 2.5) {
-                let hasLOS = true; // Linha de visão simplificada
+                let hasLOS = true;
                 map.walls.forEach(w => {
                     if (Math.min(boss.x, p.x) < w.x+w.w && Math.max(boss.x, p.x) > w.x &&
                         Math.min(boss.y, p.y) < w.y+w.h && Math.max(boss.y, p.y) > w.y) hasLOS = false;
@@ -280,14 +274,14 @@ setInterval(() => {
         if(boss.state !== 'CHASE') {
             io.emit('bossAlert', "Te achei, nó cego!");
             boss.currentSpeech = "Te achei, nó cego!";
-            boss.speechTimer = 180; // 6 segundos de destaque ao achar
+            boss.speechTimer = 180;
         }
         boss.state = 'CHASE'; boss.targetId = closestP.id;
     } else if(boss.state === 'CHASE') {
         boss.state = 'SEARCH'; boss.targetId = null;
     }
 
-    // 3. Colisões de Morte
+    // 3. Colisões
     pList.forEach(p => {
         if(!p.isHidden && rectIntersect(p, boss)) {
             io.emit('gameOver', { won: false, msg: `O Chefe pegou o ${p.name}!` });
@@ -295,7 +289,7 @@ setInterval(() => {
         }
     });
 
-    // 4. Envia o estado atual para todos
+    // 4. Sincronização
     io.emit('syncState', {
         players: players,
         boss: boss,
@@ -303,7 +297,7 @@ setInterval(() => {
         time: Math.floor((Date.now() - startTime) / 1000)
     });
 
-}, 1000 / 30); // 30 FPS no servidor
+}, 1000 / 30);
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
