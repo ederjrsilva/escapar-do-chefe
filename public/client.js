@@ -153,7 +153,13 @@ socket.on('resetToLobby', () => { window.location.reload(); });
 document.getElementById('btn-restart').onclick = () => { window.location.reload(); };
 
 function renderLoop() {
-    if(gameState !== 'PLAYING' || !syncData) return;
+    if(gameState !== 'PLAYING') return;
+
+    // Se os dados ainda não chegaram do servidor, tenta de novo no próximo quadro
+    if(!syncData) {
+        requestAnimationFrame(renderLoop);
+        return;
+    }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawMap();
