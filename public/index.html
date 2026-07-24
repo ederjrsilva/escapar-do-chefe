@@ -9,29 +9,24 @@
 </head>
 <body>
     <div id="ui-layer">
-        <!-- LOBBY SCREEN -->
         <div id="lobby-screen" class="screen active">
             <h1>Saguão Online (Até 6 Jogadores)</h1>
             <p>Selecione sua foto e clique em Pronto.</p>
-            <div class="lobby-grid" id="lobby-grid">
-                <!-- Preenchido via Socket.io -->
-            </div>
+            <div class="lobby-grid" id="lobby-grid"></div>
             <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #aaa;">
-                Controles Universais: W A S D (Mover) | SHIFT (Correr) | E (Ação) | ESPAÇO (Esconder)
+                Controles: W A S D (Mover) | SHIFT (Correr) | E (Ação) | ESPAÇO (Esconder)
             </div>
             <button id="btn-start" disabled>Aguardando todos ficarem Prontos...</button>
         </div>
 
-        <!-- HUD DE JOGO -->
         <div id="hud" class="hidden">
             <div class="hud-top">
                 <span>Tempo: <span id="hud-time">00:00</span></span>
-                <span>Objetivo: Fuja do Diretor!</span>
+                <span>Objetivo: Pegue a chave e fuja!</span>
             </div>
             <div id="hud-alert" class="hidden">⚠️ <span id="alert-text"></span> ⚠️</div>
         </div>
 
-        <!-- TELA DE FIM -->
         <div id="game-over" class="screen">
             <h1 id="end-title">Fim de Jogo</h1>
             <p id="end-msg">Mensagem</p>
