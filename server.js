@@ -277,7 +277,11 @@ setInterval(() => {
     });
 
     if(closestP) {
-        if(boss.state !== 'CHASE') io.emit('bossAlert', "Te achei, nó cego!");
+        if(boss.state !== 'CHASE') {
+            io.emit('bossAlert', "Te achei, nó cego!");
+            boss.currentSpeech = "Te achei, nó cego!";
+            boss.speechTimer = 180; // 6 segundos de destaque ao achar
+        }
         boss.state = 'CHASE'; boss.targetId = closestP.id;
     } else if(boss.state === 'CHASE') {
         boss.state = 'SEARCH'; boss.targetId = null;
