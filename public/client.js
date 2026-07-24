@@ -6,7 +6,7 @@ let gameState = 'LOBBY';
 let staticMap = null; // Recebe o mapa do servidor 1x
 let syncData = null;  // Atualizações constantes
 let myId = null;
-let bossSpeechTimer = 0;
+//let bossSpeechTimer = 0;
 
 // Imagens cacheadas para não recarregar
 const avatars = {}; 
