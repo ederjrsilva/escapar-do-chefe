@@ -6,7 +6,7 @@ let gameState = 'LOBBY';
 let staticMap = null;
 let syncData = null;
 let myId = null;
-let availablePhotos = []; // Lista de fotos da pasta /fotos
+let availablePhotos = [];
 
 const avatars = {}; 
 
@@ -62,11 +62,7 @@ window.addEventListener('keyup', (e) => {
 });
 
 socket.on('connect', () => { myId = socket.id; });
-
-// Recebe a lista de fotos da pasta 'fotos' enviada pelo servidor
-socket.on('photoList', (list) => {
-    availablePhotos = list;
-});
+socket.on('photoList', (list) => { availablePhotos = list; });
 
 socket.on('lobbyUpdate', (playersArray) => {
     const grid = document.getElementById('lobby-grid');
@@ -95,7 +91,6 @@ socket.on('lobbyUpdate', (playersArray) => {
             selectTitle.style.marginTop = "8px";
             card.appendChild(selectTitle);
 
-            // Container com as fotos disponíveis na pasta /fotos
             let photoContainer = document.createElement('div');
             photoContainer.style.display = 'flex';
             photoContainer.style.gap = '8px';
@@ -114,7 +109,6 @@ socket.on('lobbyUpdate', (playersArray) => {
                     thumb.style.border = p.avatar === thumb.src ? '2px solid #4fc3f7' : '2px solid #555';
                     thumb.style.objectFit = 'cover';
                     
-                    // Tratamento e redimensionamento igual ao upload original
                     thumb.onclick = () => {
                         let tempImg = new Image();
                         tempImg.crossOrigin = "anonymous";
@@ -210,14 +204,15 @@ function renderLoop() {
 }
 
 function drawMap() {
-    ctx.fillStyle = '#cfd8dc'; ctx.fillRect(0,0,1400,900);
-    ctx.strokeStyle = '#b0bec5'; ctx.lineWidth = 1;
-    for(let i=0; i<1400; i+=64) { ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,900); ctx.stroke(); }
-    for(let i=0; i<900; i+=64) { ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(1400,i); ctx.stroke(); }
+    // 1. Chão moderno estilo carpete corporativo refinado
+    ctx.fillStyle = '#e2e8f0'; ctx.fillRect(0, 0, 1400, 900);
+    ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 1;
+    for(let i = 0; i < 1400; i += 64) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 900); ctx.stroke(); }
+    for(let i = 0; i < 900; i += 64) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(1400, i); ctx.stroke(); }
 
-    // Nomes dos Setores no Chão
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
-    ctx.font = 'bold 20px Roboto';
+    // Nomes dos Setores no Chão com tipografia elegante
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.12)';
+    ctx.font = 'bold 22px Roboto';
     ctx.textAlign = 'center';
     ctx.fillText("COMPRAS", 400, 150);
     ctx.fillText("FINANCEIRO", 1000, 150);
@@ -225,23 +220,56 @@ function drawMap() {
     ctx.fillText("CONTRATOS", 700, 770);
     ctx.textAlign = 'left';
 
-    ctx.fillStyle = syncData.mapState.exitLocked ? '#d32f2f' : '#388e3c';
-    ctx.fillRect(staticMap.exit.x, staticMap.exit.y, staticMap.exit.w, staticMap.exit.h);
-    ctx.fillStyle = '#fff'; ctx.font = '14px Arial'; ctx.fillText("SAÍDA", staticMap.exit.x+30, staticMap.exit.y-10);
+    // 2. Renderização de Móveis Fictícios (Mesas e Computadores)
+    if (staticMap && staticMap.furniture) {
+        staticMap.furniture.forEach(f => {
+            // Sombra da mesa
+            ctx.fillStyle = 'rgba(0,0,0,0.15)';
+            ctx.fillRect(f.x + 2, f.y + 4, f.w, f.h);
+            // Corpo da Mesa (Madeira elegante)
+            ctx.fillStyle = '#b45309';
+            ctx.fillRect(f.x, f.y, f.w, f.h);
+            ctx.strokeStyle = '#78350f';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(f.x, f.y, f.w, f.h);
 
-    if(!syncData.mapState.keyCollected) {
-        ctx.fillStyle = '#ffeb3b';
-        ctx.beginPath(); ctx.arc(staticMap.key.x+15, staticMap.key.y+15, 15, 0, Math.PI*2); ctx.fill();
+            // Computadores / Monitores em cima da mesa
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(f.x + f.w/2 - 14, f.y + 12, 28, 16);
+            ctx.fillStyle = '#38bdf8'; // Tela brilhando
+            ctx.fillRect(f.x + f.w/2 - 12, f.y + 14, 24, 12);
+            // Base do monitor
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(f.x + f.w/2 - 3, f.y + 28, 6, 4);
+        });
     }
 
+    // 3. Saída
+    ctx.fillStyle = syncData.mapState.exitLocked ? '#dc2626' : '#16a34a';
+    ctx.fillRect(staticMap.exit.x, staticMap.exit.y, staticMap.exit.w, staticMap.exit.h);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 13px Roboto'; ctx.fillText("SAÍDA", staticMap.exit.x + 30, staticMap.exit.y - 10);
+
+    // 4. Chave
+    if(!syncData.mapState.keyCollected) {
+        ctx.fillStyle = '#facc15';
+        ctx.beginPath(); ctx.arc(staticMap.key.x + 15, staticMap.key.y + 15, 15, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#ca8a04'; ctx.lineWidth = 2; ctx.stroke();
+    }
+
+    // 5. Esconderijos (Batedeiras / Cabines)
     staticMap.hidingSpots.forEach(s => {
-        ctx.fillStyle = '#283593'; ctx.fillRect(s.x, s.y, s.w, s.h);
-        ctx.fillStyle = '#3f51b5'; ctx.fillRect(s.x, s.y - 15, s.w, s.h);
+        ctx.fillStyle = '#1e3a8a'; ctx.fillRect(s.x, s.y, s.w, s.h);
+        ctx.fillStyle = '#3b82f6'; ctx.fillRect(s.x, s.y - 15, s.w, s.h);
     });
 
+    // 6. Paredes com efeito 3D e design moderno em tons de ardência/cinza escuro
     staticMap.walls.forEach(w => {
-        ctx.fillStyle = '#455a64'; ctx.fillRect(w.x, w.y, w.w, w.h);
-        ctx.fillStyle = '#607d8b'; ctx.fillRect(w.x, w.y - 30, w.w, w.h + 30);
+        // Ignora os retornos dos móveis para não redesenhar a parede por cima deles
+        let isFurniture = staticMap.furniture && staticMap.furniture.some(f => f.x === w.x && f.y === w.y);
+        if(!isFurniture) {
+            ctx.fillStyle = '#334155'; ctx.fillRect(w.x, w.y, w.w, w.h);
+            ctx.fillStyle = '#475569'; ctx.fillRect(w.x, w.y - 30, w.w, w.h + 30);
+        }
     });
 }
 
@@ -250,9 +278,9 @@ function drawPlayer(p) {
     let cx = p.x + p.w/2; let cy = p.y + p.h/2;
     let swing = p.isMoving ? Math.sin(Date.now() / 120) * 12 : 0;
 
-    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.ellipse(cx, p.y + p.h + 5, p.w/1.5, p.h/3, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(cx, p.y + p.h + 5, p.w/1.5, p.h/3, 0, 0, Math.PI*2); ctx.fill();
 
-    ctx.strokeStyle = '#34495e'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+    ctx.strokeStyle = '#334155'; ctx.lineWidth = 6; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(cx - 6, cy + 10); ctx.lineTo(cx - 6 + swing, cy + 25); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(cx + 6, cy + 10); ctx.lineTo(cx + 6 - swing, cy + 25); ctx.stroke();
 
@@ -266,15 +294,15 @@ function drawPlayer(p) {
         ctx.save(); ctx.beginPath(); ctx.arc(cx, cy - 20, 20, 0, Math.PI*2); ctx.clip();
         ctx.drawImage(avatars[p.id], cx - 20, cy - 40, 40, 40); ctx.restore();
     } else {
-        ctx.fillStyle = '#e0e0e0'; ctx.beginPath(); ctx.arc(cx, cy - 20, 16, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#e2e8f0'; ctx.beginPath(); ctx.arc(cx, cy - 20, 16, 0, Math.PI*2); ctx.fill();
     }
 
     if(p.id === myId) {
         ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(cx - 15, cy - 50, 30, 4);
-        ctx.fillStyle = p.stamina < 30 ? '#ff5252' : '#00e676';
+        ctx.fillStyle = p.stamina < 30 ? '#ef4444' : '#22c55e';
         ctx.fillRect(cx - 15, cy - 50, (p.stamina/100)*30, 4);
         
-        ctx.fillStyle = '#4fc3f7'; ctx.font = '10px Arial'; ctx.textAlign = 'center';
+        ctx.fillStyle = '#38bdf8'; ctx.font = 'bold 10px Roboto'; ctx.textAlign = 'center';
         ctx.fillText("VOCÊ", cx, cy - 60); ctx.textAlign = 'left';
     }
 }
@@ -284,23 +312,23 @@ function drawBoss(b) {
     let isMoving = b.state !== 'SEARCH';
     let swing = isMoving ? Math.sin(Date.now() / 150) * 15 : 0;
 
-    ctx.fillStyle = b.state === 'CHASE' ? 'rgba(255, 0, 0, 0.2)' : 'rgba(255, 255, 0, 0.2)';
+    ctx.fillStyle = b.state === 'CHASE' ? 'rgba(239, 68, 68, 0.18)' : 'rgba(234, 179, 8, 0.18)';
     ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, 400, b.angle - Math.PI/5, b.angle + Math.PI/5); ctx.lineTo(cx, cy); ctx.fill();
 
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.ellipse(cx, b.y + b.h + 5, b.w/1.5, b.h/3, 0, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.ellipse(cx, b.y + b.h + 5, b.w/1.5, b.h/3, 0, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 7; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(cx - 8, cy + 10); ctx.lineTo(cx - 8 + swing, cy + 30); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(cx + 8, cy + 10); ctx.lineTo(cx + 8 - swing, cy + 30); ctx.stroke();
-    ctx.strokeStyle = '#e67e22'; ctx.lineWidth = 6;
+    ctx.strokeStyle = '#c2410c'; ctx.lineWidth = 6;
     ctx.beginPath(); ctx.moveTo(cx - 20, cy - 5); ctx.lineTo(cx - 22 - swing, cy + 15); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(cx + 20, cy - 5); ctx.lineTo(cx + 22 + swing, cy + 15); ctx.stroke();
-    ctx.fillStyle = '#212121'; ctx.fillRect(b.x, b.y - 10, b.w, b.h + 15);
+    ctx.fillStyle = '#0f172a'; ctx.fillRect(b.x, b.y - 10, b.w, b.h + 15);
 
-    ctx.fillStyle = '#f5b041'; ctx.beginPath(); ctx.arc(cx, cy - 25, 18, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#bdc3c7'; ctx.beginPath(); ctx.arc(cx - 16, cy - 22, 6, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(cx + 16, cy - 22, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fbbf24'; ctx.beginPath(); ctx.arc(cx, cy - 25, 18, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#94a3b8'; ctx.beginPath(); ctx.arc(cx - 16, cy - 22, 6, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(cx + 16, cy - 22, 6, 0, Math.PI * 2); ctx.fill();
     let dirX = Math.cos(b.angle) * 5;
-    ctx.fillStyle = '#d32f2f'; ctx.fillRect(cx - 8 + dirX, cy - 30, 4, 4); ctx.fillRect(cx + 4 + dirX, cy - 30, 4, 4);
-    ctx.strokeStyle = '#333'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx - 10 + dirX, cy - 33); ctx.lineTo(cx - 3 + dirX, cy - 30); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx + 10 + dirX, cy - 33); ctx.lineTo(cx + 3 + dirX, cy - 30); ctx.stroke();
+    ctx.fillStyle = '#dc2626'; ctx.fillRect(cx - 8 + dirX, cy - 30, 4, 4); ctx.fillRect(cx + 4 + dirX, cy - 30, 4, 4);
+    ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx - 10 + dirX, cy - 33); ctx.lineTo(cx - 3 + dirX, cy - 30); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx + 10 + dirX, cy - 33); ctx.lineTo(cx + 3 + dirX, cy - 30); ctx.stroke();
 
     if (b.speechTimer > 0 && b.currentSpeech) {
         ctx.fillStyle = '#fff'; 
@@ -311,7 +339,7 @@ function drawBoss(b) {
             ctx.rect(cx - 110, cy - 80, 220, 30);
         }
         ctx.fill();
-        ctx.fillStyle = '#000'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center';
+        ctx.fillStyle = '#000'; ctx.font = 'bold 11px Roboto'; ctx.textAlign = 'center';
         ctx.fillText(b.currentSpeech, cx, cy - 60); ctx.textAlign = 'left'; 
     }
 }
