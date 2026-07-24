@@ -6,6 +6,7 @@ let gameState = 'LOBBY';
 let staticMap = null;
 let syncData = null;
 let myId = null;
+let availablePhotos = []; // Lista de fotos da pasta /fotos
 
 const avatars = {}; 
 
@@ -62,6 +63,11 @@ window.addEventListener('keyup', (e) => {
 
 socket.on('connect', () => { myId = socket.id; });
 
+// Recebe a lista de fotos da pasta 'fotos' enviada pelo servidor
+socket.on('photoList', (list) => {
+    availablePhotos = list;
+});
+
 socket.on('lobbyUpdate', (playersArray) => {
     const grid = document.getElementById('lobby-grid');
     grid.innerHTML = '';
@@ -83,14 +89,35 @@ socket.on('lobbyUpdate', (playersArray) => {
         `;
 
         if(isMe && !p.ready) {
-            let input = document.createElement('input');
-            input.type = 'file'; input.accept = 'image/*'; input.style.display = 'block'; input.style.margin = '10px auto';
-            input.onchange = (e) => {
-                const file = e.target.files[0];
-                if(file) {
-                    const reader = new FileReader();
-                    reader.onload = (ev) => {
+            let selectTitle = document.createElement('p');
+            selectTitle.innerText = "Escolha seu avatar:";
+            selectTitle.style.fontSize = "11px";
+            selectTitle.style.marginTop = "8px";
+            card.appendChild(selectTitle);
+
+            // Container com as fotos disponíveis na pasta /fotos
+            let photoContainer = document.createElement('div');
+            photoContainer.style.display = 'flex';
+            photoContainer.style.gap = '8px';
+            photoContainer.style.justifyContent = 'center';
+            photoContainer.style.flexWrap = 'wrap';
+            photoContainer.style.margin = '8px 0';
+
+            if (availablePhotos.length > 0) {
+                availablePhotos.forEach(filename => {
+                    let thumb = document.createElement('img');
+                    thumb.src = `/fotos/${filename}`;
+                    thumb.style.width = '42px';
+                    thumb.style.height = '42px';
+                    thumb.style.borderRadius = '50%';
+                    thumb.style.cursor = 'pointer';
+                    thumb.style.border = p.avatar === thumb.src ? '2px solid #4fc3f7' : '2px solid #555';
+                    thumb.style.objectFit = 'cover';
+                    
+                    // Tratamento e redimensionamento igual ao upload original
+                    thumb.onclick = () => {
                         let tempImg = new Image();
+                        tempImg.crossOrigin = "anonymous";
                         tempImg.onload = () => {
                             let cvs = document.createElement('canvas');
                             cvs.width = 64; cvs.height = 64;
@@ -98,17 +125,22 @@ socket.on('lobbyUpdate', (playersArray) => {
                             tCtx.drawImage(tempImg, 0, 0, 64, 64);
                             socket.emit('updateAvatar', cvs.toDataURL('image/jpeg', 0.8));
                         };
-                        tempImg.src = ev.target.result;
+                        tempImg.src = thumb.src;
                     };
-                    reader.readAsDataURL(file);
-                }
-            };
+                    photoContainer.appendChild(thumb);
+                });
+            } else {
+                let errText = document.createElement('p');
+                errText.innerText = "Coloque imagens na pasta 'fotos'!";
+                errText.style.fontSize = "10px";
+                errText.style.color = "#ff5252";
+                photoContainer.appendChild(errText);
+            }
+            card.appendChild(photoContainer);
             
             let btn = document.createElement('button');
             btn.innerText = "Estou Pronto!";
             btn.onclick = () => { AudioSys.ctx.resume(); socket.emit('setReady', true); };
-            
-            card.appendChild(input);
             card.appendChild(btn);
         }
         grid.appendChild(card);
@@ -155,7 +187,6 @@ document.getElementById('btn-restart').onclick = () => { window.location.reload(
 function renderLoop() {
     if(gameState !== 'PLAYING') return;
 
-    // Proteção caso os dados ainda não estejam totalmente prontos
     if(!syncData || !syncData.players || !syncData.boss) {
         requestAnimationFrame(renderLoop);
         return;
@@ -183,6 +214,16 @@ function drawMap() {
     ctx.strokeStyle = '#b0bec5'; ctx.lineWidth = 1;
     for(let i=0; i<1400; i+=64) { ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,900); ctx.stroke(); }
     for(let i=0; i<900; i+=64) { ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(1400,i); ctx.stroke(); }
+
+    // Nomes dos Setores no Chão
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
+    ctx.font = 'bold 20px Roboto';
+    ctx.textAlign = 'center';
+    ctx.fillText("COMPRAS", 400, 150);
+    ctx.fillText("FINANCEIRO", 1000, 150);
+    ctx.fillText("RECURSOS HUMANOS", 700, 500);
+    ctx.fillText("CONTRATOS", 700, 770);
+    ctx.textAlign = 'left';
 
     ctx.fillStyle = syncData.mapState.exitLocked ? '#d32f2f' : '#388e3c';
     ctx.fillRect(staticMap.exit.x, staticMap.exit.y, staticMap.exit.w, staticMap.exit.h);
@@ -264,7 +305,6 @@ function drawBoss(b) {
     if (b.speechTimer > 0 && b.currentSpeech) {
         ctx.fillStyle = '#fff'; 
         ctx.beginPath();
-        // Compatibilidade universal para evitar travamento em celulares/navegadores antigos
         if (typeof ctx.roundRect === 'function') {
             ctx.roundRect(cx - 110, cy - 80, 220, 30, 10);
         } else {
