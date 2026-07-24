@@ -246,7 +246,8 @@ function drawPlayer(p) {
 
     ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y - 5, p.w, p.h + 10);
 
-    if (avatars[p.id]) {
+   // Só desenha se a imagem já existir e estiver 100% carregada
+    if (avatars[p.id] && avatars[p.id].complete) {
         ctx.save(); ctx.beginPath(); ctx.arc(cx, cy - 20, 20, 0, Math.PI*2); ctx.clip();
         ctx.drawImage(avatars[p.id], cx - 20, cy - 40, 40, 40); ctx.restore();
     } else {
