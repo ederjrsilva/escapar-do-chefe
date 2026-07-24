@@ -103,9 +103,18 @@ socket.on('lobbyUpdate', (playersArray) => {
                 if(file) {
                     const reader = new FileReader();
                     reader.onload = (ev) => {
-                        socket.emit('updateAvatar', ev.target.result);
+                        // Comprime e corta a imagem antes de enviar (Evita crashes e lag)
+                        let tempImg = new Image();
+                        tempImg.onload = () => {
+                            let cvs = document.createElement('canvas');
+                            cvs.width = 64; cvs.height = 64;
+                            let tCtx = cvs.getContext('2d');
+                            tCtx.drawImage(tempImg, 0, 0, 64, 64);
+                            socket.emit('updateAvatar', cvs.toDataURL('image/jpeg', 0.8));
+                        };
+                        tempImg.src = ev.target.result;
                     };
-                    reader.readAsDataURL(file); // Converte foto pra texto e envia
+                    reader.readAsDataURL(file);
                 }
             };
             
