@@ -155,8 +155,8 @@ document.getElementById('btn-restart').onclick = () => { window.location.reload(
 function renderLoop() {
     if(gameState !== 'PLAYING') return;
 
-    // Se os dados ainda não chegaram do servidor, tenta de novo no próximo quadro
-    if(!syncData) {
+    // Proteção caso os dados ainda não estejam totalmente prontos
+    if(!syncData || !syncData.players || !syncData.boss) {
         requestAnimationFrame(renderLoop);
         return;
     }
@@ -164,7 +164,8 @@ function renderLoop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawMap();
 
-    let entities = [ ...Object.values(syncData.players), syncData.boss ].sort((a,b) => a.y - b.y);
+    let playersArr = Object.values(syncData.players);
+    let entities = [ ...playersArr, syncData.boss ].sort((a,b) => a.y - b.y);
     entities.forEach(e => {
         if(e.hasOwnProperty('stamina')) drawPlayer(e);
         else drawBoss(e);
@@ -261,7 +262,15 @@ function drawBoss(b) {
     ctx.strokeStyle = '#333'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx - 10 + dirX, cy - 33); ctx.lineTo(cx - 3 + dirX, cy - 30); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx + 10 + dirX, cy - 33); ctx.lineTo(cx + 3 + dirX, cy - 30); ctx.stroke();
 
     if (b.speechTimer > 0 && b.currentSpeech) {
-        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.roundRect(cx - 110, cy - 80, 220, 30, 10); ctx.fill();
+        ctx.fillStyle = '#fff'; 
+        ctx.beginPath();
+        // Compatibilidade universal para evitar travamento em celulares/navegadores antigos
+        if (typeof ctx.roundRect === 'function') {
+            ctx.roundRect(cx - 110, cy - 80, 220, 30, 10);
+        } else {
+            ctx.rect(cx - 110, cy - 80, 220, 30);
+        }
+        ctx.fill();
         ctx.fillStyle = '#000'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center';
         ctx.fillText(b.currentSpeech, cx, cy - 60); ctx.textAlign = 'left'; 
     }
