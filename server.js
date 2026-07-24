@@ -136,8 +136,16 @@ function checkGameStart() {
 
 function resetGame() {
     gameState = 'LOBBY';
-    map.key.collected = false; map.exit.locked = true;
-    boss.state = 'PATROL'; boss.targetId = null;
+    map.key.collected = false; 
+    map.exit.locked = true;
+    
+    // RESET: Volta o chefe para o meio do mapa
+    boss.x = 700; 
+    boss.y = 700;
+    boss.state = 'PATROL'; 
+    boss.targetId = null;
+    boss.wpIndex = 0;
+    
     io.emit('resetToLobby');
 }
 
