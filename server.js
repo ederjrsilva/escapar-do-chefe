@@ -1,12 +1,16 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.static('public'));
+// Expõe a pasta 'fotos' publicamente para o jogo carregar as imagens
+app.use('/fotos', express.static(path.join(__dirname, 'fotos')));
 
 // ==========================================
 // ESTADO DO JOGO NO SERVIDOR
@@ -14,7 +18,7 @@ app.use(express.static('public'));
 let gameState = 'LOBBY'; 
 let players = {};
 let startTime = 0;
-let nextPlayerNumber = 1; // Controla o número sequencial dos jogadores para evitar duplicatas
+let nextPlayerNumber = 1;
 
 const map = {
     walls: [
@@ -72,6 +76,18 @@ io.on('connection', (socket) => {
         socket.disconnect();
         return;
     }
+
+    // Envia a lista de fotos disponíveis na pasta /fotos para o cliente
+    let photoFiles = [];
+    try {
+        const fotosDir = path.join(__dirname, 'fotos');
+        if (fs.existsSync(fotosDir)) {
+            photoFiles = fs.readdirSync(fotosDir).filter(file => /\.(jpg|jpeg|png|webp)$/i.test(file));
+        }
+    } catch (e) {
+        console.log("Erro ao ler pasta de fotos.");
+    }
+    socket.emit('photoList', photoFiles);
 
     players[socket.id] = {
         id: socket.id, ready: false, name: `Jogador ${nextPlayerNumber}`,
@@ -219,7 +235,6 @@ setInterval(() => {
         } else boss.state = 'PATROL';
     }
 
-    // Falas intermitentes enquanto patrulha/procura
     if (boss.state === 'PATROL' || boss.state === 'SEARCH') {
         if (boss.speechCooldown > 0) {
             boss.speechCooldown--;
@@ -250,7 +265,6 @@ setInterval(() => {
     });
     if(!hitX) boss.x = nextX; if(!hitY) boss.y = nextY;
 
-    // Visão do Chefe
     let closestP = null; let closestDist = Infinity;
     pList.forEach(p => {
         if(p.isHidden) return;
@@ -281,7 +295,6 @@ setInterval(() => {
         boss.state = 'SEARCH'; boss.targetId = null;
     }
 
-    // 3. Colisões
     pList.forEach(p => {
         if(!p.isHidden && rectIntersect(p, boss)) {
             io.emit('gameOver', { won: false, msg: `O Chefe pegou o ${p.name}!` });
@@ -289,7 +302,6 @@ setInterval(() => {
         }
     });
 
-    // 4. Sincronização
     io.emit('syncState', {
         players: players,
         boss: boss,
