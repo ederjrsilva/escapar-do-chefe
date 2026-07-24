@@ -51,6 +51,7 @@ function dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
 // ==========================================
 const colors = ['#00bcd4', '#e91e63', '#ff9800', '#9c27b0', '#8bc34a', '#ffeb3b'];
 let colorIndex = 0;
+let nextPlayerNumber = 1; // <-- ADICIONE ESTA LINHA AQUI
 
 io.on('connection', (socket) => {
     if(gameState !== 'LOBBY' || Object.keys(players).length >= 6) {
@@ -68,6 +69,7 @@ io.on('connection', (socket) => {
         inputs: { up: false, down: false, left: false, right: false, run: false }
     };
     colorIndex++;
+    nextPlayerNumber++;
 
     io.emit('lobbyUpdate', Object.values(players));
 
@@ -121,7 +123,10 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         delete players[socket.id];
         io.emit('lobbyUpdate', Object.values(players));
-        if(Object.keys(players).length === 0) resetGame();
+        if(Object.keys(players).length === 0) {
+            nextPlayerNumber = 1; // <-- ADICIONE ESTA LINHA AQUI
+            resetGame();
+        }
     });
 });
 
