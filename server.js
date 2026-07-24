@@ -253,5 +253,5 @@ setInterval(() => {
 
 }, 1000 / 30); // 30 FPS no servidor
 
-const PORT = 3000;
-server.listen(PORT, () => console.log(`Servidor rodando! Acesse http://localhost:${PORT}`));
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
