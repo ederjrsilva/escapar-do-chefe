@@ -297,7 +297,7 @@ setInterval(() => {
 
     pList.forEach(p => {
         if(!p.isHidden && rectIntersect(p, boss)) {
-            io.emit('gameOver', { won: false, msg: `O Chefe pegou o ${p.name}!` });
+            io.emit('gameOver', { won: false, msg: `Peguei você, nó cego 😠 ${p.name}!` });
             resetGame();
         }
     });
