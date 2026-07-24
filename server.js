@@ -35,8 +35,22 @@ const map = {
 let boss = {
     x: 700, y: 700, w: 32, h: 32, state: 'PATROL', angle: Math.PI, targetId: null, lastKnownPos: null,
     waypoints: [{x:700, y:800}, {x:100, y:800}, {x:100, y:100}, {x:700, y:100}, {x:1300, y:100}, {x:1300, y:800}, {x:700, y:800}],
-    wpIndex: 0
+    wpIndex: 0,
+    currentSpeech: "",
+    speechTimer: 0,
+    speechCooldown: 0
 };
+
+// Lista de nomes para ele procurar aleatoriamente
+const searchPhrases = [
+    "cadê o Rickson?",
+    "cadê a Marilyn?",
+    "cadê a Aline?",
+    "cadê o Éder?",
+    "cadê a Keila?",
+    "cadê a Letícia?",
+    "cadê o Léo?"
+];
 
 // ==========================================
 // UTILIDADES
@@ -188,7 +202,7 @@ setInterval(() => {
         });
         if(!hitX) p.x = nextX; if(!hitY) p.y = nextY;
     });
-
+ 
     // 2. Atualiza Chefe (IA)
     let speed = boss.state === 'CHASE' ? 7.2 : 3;
     let targetX = boss.x, targetY = boss.y;
@@ -207,6 +221,27 @@ setInterval(() => {
             targetX = boss.lastKnownPos.x; targetY = boss.lastKnownPos.y;
             if(dist(boss.x, boss.y, targetX, targetY) < 15) boss.state = 'PATROL';
         } else boss.state = 'PATROL';
+    }
+
+    // Controle de fala intermitente enquanto procura/patrulha
+    if (boss.state === 'PATROL' || boss.state === 'SEARCH') {
+        if (boss.speechCooldown > 0) {
+            boss.speechCooldown--;
+        } else if (boss.speechTimer <= 0) {
+            // Escolhe uma frase aleatória da lista
+            let randomPhrase = searchPhrases[Math.floor(Math.random() * searchPhrases.length)];
+            boss.currentSpeech = randomPhrase;
+            boss.speechTimer = 90; // Fica visível por ~3 segundos (a 30fps)
+            boss.speechCooldown = 150 + Math.random() * 150; // Próxima fala entre 5 a 10 segundos
+            io.emit('audioPlay', 'bossSpeak'); // Som abafado de fala
+        }
+    }
+
+    // Decrementa o timer da fala atual
+    if (boss.speechTimer > 0) {
+        boss.speechTimer--;
+    } else if (boss.speechTimer === 0 && boss.state !== 'CHASE') {
+        boss.currentSpeech = "";
     }
 
     let dx = targetX - boss.x; let dy = targetY - boss.y;
