@@ -40,13 +40,27 @@ const map = {
     exit: { x: MAP_W/2 - 50, y: MAP_H - 40, w: 100, h: 20 }
 };
 
-let gameManager = { level: 1, globalEvent: 'NONE', eventTimer: 0 };
+const BOSS_PATROL_PHRASES = [
+    "Cadê a Letícia?", "Cadê a Marilyn?", "Cadê o Rickson?",
+    "Cadê a Keila?", "Cadê a Aline?", "Cadê o Léo?"
+];
+const TOTAL_OBJECTIVES = 20;
+
+let gameManager = { level: 1, globalEvent: 'NONE', eventTimer: 0, objectivesCollected: 0, totalObjectives: TOTAL_OBJECTIVES, activeItem: null, speakCooldown: 300 };
 
 let boss = {
     x: MAP_W/2, y: MAP_H/2, w: 32, h: 32, state: 'PATROL', angle: 0, targetId: null, lastKnownPos: null,
     waypoints: [ {x: 400, y: 300}, {x: 1000, y: 300}, {x: 1500, y: 400}, {x: 350, y: 850}, {x: 950, y: 850}, {x: 500, y: 1450}, {x: 1400, y: 1450} ],
-    wpIndex: 0, prevX: 0, prevY: 0, stuckTimer: 0, isMoving: false
+    wpIndex: 0, prevX: 0, prevY: 0, stuckTimer: 0, isMoving: false, speechText: null, speechTimer: 0
 };
+
+// Faz o chefe "falar": mostra um balão de fala (via speechText/speechTimer, sincronizado
+// no syncState) e dispara um evento à parte pra tocar o som só uma vez.
+function bossSay(text, ttlFrames = 90) {
+    boss.speechText = text;
+    boss.speechTimer = ttlFrames;
+    io.emit('bossSpeak', text);
+}
 
 function rectIntersect(r1, r2) { return !(r2.x > r1.x + r1.w || r2.x + r2.w < r1.x || r2.y > r1.y + r1.h || r2.y + r2.h < r1.y); }
 function dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
@@ -100,7 +114,11 @@ io.on('connection', (socket) => {
             else if (p.isHidden) p.isHidden = false;
         }
         if(actionType === 'INTERACT' && !p.isHidden) {
-            if(rectIntersect(p, {x: map.exit.x, y: map.exit.y - 20, w: map.exit.w, h: map.exit.h + 20})) {
+            if(gameManager.activeItem && rectIntersect(p, gameManager.activeItem)) {
+                io.emit('audioPlay', 'item');
+                gameManager.objectivesCollected++;
+                spawnNextObjective();
+            } else if(gameManager.objectivesCollected >= gameManager.totalObjectives && rectIntersect(p, {x: map.exit.x, y: map.exit.y - 20, w: map.exit.w, h: map.exit.h + 20})) {
                 p.isDead = true; p.saved = true; socket.emit('gameOver', { won: true, msg: "Você escapou!" }); checkEndGameCondition();
             }
         }
@@ -109,12 +127,28 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => { delete players[socket.id]; io.emit('lobbyUpdate', Object.values(players)); if(Object.keys(players).length === 0) resetGame(); });
 });
 
+function spawnNextObjective() {
+    if(gameManager.objectivesCollected >= gameManager.totalObjectives) {
+        gameManager.activeItem = null;
+        io.emit('bossAlert', "Tudo coletado! CORRAM PARA A SAÍDA!");
+        return;
+    }
+    let item;
+    let tries = 0;
+    do {
+        item = { x: 150 + Math.random() * (MAP_W - 300), y: 150 + Math.random() * (MAP_H - 300), w: 30, h: 30, color: '#facc15' };
+        tries++;
+    } while (map.walls.some(w => rectIntersect(item, w)) && tries < 30);
+    gameManager.activeItem = item;
+}
+
 function checkGameStart() {
     let pList = Object.values(players);
     if(pList.length > 0 && pList.every(p => p.ready && p.avatar)) {
         gameState = 'PLAYING'; startTime = Date.now();
-        gameManager.level = 1;
-        io.emit('bossAlert', "Escape do Chefe e corra para a saída!");
+        gameManager.level = 1; gameManager.objectivesCollected = 0; gameManager.speakCooldown = 300;
+        spawnNextObjective();
+        io.emit('bossAlert', `Colete os ${gameManager.totalObjectives} itens espalhados e fuja do chefe!`);
         io.emit('gameStart', map);
     }
 }
@@ -132,8 +166,9 @@ function checkEndGameCondition() {
 
 function resetGame() {
     gameState = 'LOBBY';
-    boss = { x: MAP_W/2, y: MAP_H/2, w: 32, h: 32, state: 'PATROL', angle: 0, targetId: null, lastKnownPos: null, wpIndex: 0, prevX: 0, prevY: 0, stuckTimer: 0, isMoving: false };
+    boss = { x: MAP_W/2, y: MAP_H/2, w: 32, h: 32, state: 'PATROL', angle: 0, targetId: null, lastKnownPos: null, wpIndex: 0, prevX: 0, prevY: 0, stuckTimer: 0, isMoving: false, speechText: null, speechTimer: 0 };
     gameManager.level = 1; gameManager.globalEvent = 'NONE'; gameManager.eventTimer = 0;
+    gameManager.objectivesCollected = 0; gameManager.activeItem = null; gameManager.speakCooldown = 300;
     // Reseta o "pronto" de todo mundo também — sem isso, o lobby ficava travado
     // em "Iniciando..." pra sempre depois de uma partida, pois todo mundo
     // continuava marcado como pronto sem ninguém apertar o botão de novo.
@@ -160,6 +195,16 @@ setInterval(() => {
         io.emit('audioPlay', 'bossSpot');
     }
     let speedMultiplier = 1 + (gameManager.level - 1) * 0.12;
+
+    // Fala aleatória do chefe enquanto ele não está perseguindo ninguém
+    if(boss.state !== 'CHASE') {
+        gameManager.speakCooldown--;
+        if(gameManager.speakCooldown <= 0) {
+            bossSay(BOSS_PATROL_PHRASES[Math.floor(Math.random() * BOSS_PATROL_PHRASES.length)]);
+            gameManager.speakCooldown = 300 + Math.floor(Math.random() * 300); // ~10 a 20s
+        }
+    }
+    if(boss.speechTimer > 0) boss.speechTimer--;
 
     let pList = Object.values(players);
 
@@ -272,13 +317,13 @@ setInterval(() => {
     });
 
     if(closestP) {
-        if(boss.state !== 'CHASE') { io.emit('audioPlay', 'bossSpot'); }
+        if(boss.state !== 'CHASE') { io.emit('audioPlay', 'bossSpot'); bossSay("Te achei, nó cego!"); }
         boss.state = 'CHASE'; boss.targetId = closestP.id;
     } else if(boss.state === 'CHASE') { boss.state = 'SEARCH'; boss.targetId = null; }
 
     pList.forEach(p => {
         if(!p.isDead && !p.isHidden && rectIntersect(p, boss)) {
-            p.isDead = true; p.isHidden = false; io.emit('playerCaught', { id: p.id, name: p.name }); checkEndGameCondition();
+            p.isDead = true; p.isHidden = false; bossSay("Te peguei, nó cego!"); io.emit('playerCaught', { id: p.id, name: p.name }); checkEndGameCondition();
         }
     });
 
