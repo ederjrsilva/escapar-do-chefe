@@ -9,7 +9,6 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.static('public'));
-// Servindo a pasta de fotos
 app.use('/fotos', express.static(path.join(__dirname, 'fotos')));
 
 let gameState = 'LOBBY'; 
@@ -64,7 +63,6 @@ const colors = ['#00bcd4', '#e91e63', '#ff9800', '#9c27b0', '#8bc34a', '#ffeb3b'
 io.on('connection', (socket) => {
     if(gameState !== 'LOBBY') { socket.emit('gameFull'); socket.disconnect(); return; }
 
-    // Enviar lista de fotos na pasta 'fotos'
     let photoFiles = [];
     try {
         const fotosDir = path.join(__dirname, 'fotos');
@@ -84,10 +82,7 @@ io.on('connection', (socket) => {
     io.emit('lobbyUpdate', Object.values(players));
 
     socket.on('updateAvatar', (fotoFilename) => {
-        if(players[socket.id]) {
-            players[socket.id].avatar = fotoFilename;
-            io.emit('lobbyUpdate', Object.values(players));
-        }
+        if(players[socket.id]) { players[socket.id].avatar = fotoFilename; io.emit('lobbyUpdate', Object.values(players)); }
     });
 
     socket.on('setReady', (isReady) => {
@@ -220,18 +215,30 @@ setInterval(() => {
 
     boss.isMoving = (Math.abs(boss.x - boss.prevX) > 0.5 || Math.abs(boss.y - boss.prevY) > 0.5);
 
-    if (!boss.isMoving && boss.state !== 'SEARCH') {
+    // SISTEMA ANTI-TRAVAMENTO (UNSTUCK)
+    if (!boss.isMoving) {
         boss.stuckTimer++;
-        if (boss.stuckTimer > 30) {
-            if (boss.state === 'PATROL') boss.wpIndex = (boss.wpIndex + 1) % boss.waypoints.length;
-            else if (boss.state === 'CHASE') { boss.state = 'SEARCH'; boss.targetId = null; }
+        if (boss.stuckTimer > 15) { // Se ficar parado contra a parede por 0.5 seg
+            boss.state = 'PATROL';
+            boss.targetId = null;
+            boss.wpIndex = (boss.wpIndex + 1) % boss.waypoints.length; // Muda a rota
+            
+            // Dá um leve empurrãozinho na direção do novo waypoint pra soltar do polígono
+            let wp = boss.waypoints[boss.wpIndex];
+            let angleToWp = Math.atan2(wp.y - boss.y, wp.x - boss.x);
+            boss.x += Math.cos(angleToWp) * 10;
+            boss.y += Math.sin(angleToWp) * 10;
+            
             boss.stuckTimer = 0;
         }
-    } else boss.stuckTimer = 0;
+    } else {
+        boss.stuckTimer = 0;
+    }
+    
     boss.prevX = boss.x; boss.prevY = boss.y;
 
     let closestDist = Infinity; let closestP = null;
-    let sightRadius = gameManager.globalEvent === 'BLACKOUT' ? 200 : 500;
+    let sightRadius = gameManager.globalEvent === 'BLACKOUT' ? 250 : 500;
 
     pList.forEach(p => {
         if(p.isDead || p.isHidden) return;
