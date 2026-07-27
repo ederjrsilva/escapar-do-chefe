@@ -8,6 +8,7 @@ let gameState = 'LOBBY';
 let staticMap = null;
 let syncData = null;
 let myId = null;
+let loopRunning = false;
 
 const imageCache = {};
 const animStates = {}; 
@@ -70,6 +71,15 @@ socket.on('photoList', (photos) => {
 function openPhotoModal() { document.getElementById('photo-modal').style.display = 'block'; }
 
 socket.on('lobbyUpdate', (playersArray) => {
+    // O servidor só emite isso quando está em estado LOBBY. Se o cliente ainda
+    // achava que estava em PLAYING/GAMEOVER (ex: depois de um reinício do
+    // servidor), força a volta pra tela de lobby em vez de ficar preso.
+    if(gameState !== 'LOBBY') {
+        gameState = 'LOBBY'; syncData = null; staticMap = null;
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById('lobby').classList.add('active');
+        document.getElementById('hud').classList.add('hidden');
+    }
     const grid = document.getElementById('lobby-grid'); grid.innerHTML = '';
     playersArray.forEach(p => {
         let isMe = p.id === myId;
@@ -104,13 +114,28 @@ socket.on('gameStart', (mapData) => {
     gameState = 'PLAYING'; staticMap = mapData;
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById('hud').classList.remove('hidden');
-    resizeCanvas(); window.addEventListener('resize', resizeCanvas);
-    requestAnimationFrame(renderLoop);
+    resizeCanvas();
+    if(!resizeListenerAdded) { window.addEventListener('resize', resizeCanvas); resizeListenerAdded = true; }
+    // Só inicia um novo loop de desenho se não houver um já rodando.
+    // Sem essa checagem, um 'gameStart' que chega enquanto o loop anterior
+    // ainda está de pé (ex: depois de reconectar após o servidor reiniciar)
+    // cria um SEGUNDO loop rodando em paralelo, e cada um desenha sua
+    // própria camada escura por cima da outra — a tela vai ficando cada
+    // vez mais preta a cada "reinício".
+    if(!loopRunning) { loopRunning = true; requestAnimationFrame(renderLoop); }
+});
+
+socket.on('resetToLobby', () => {
+    gameState = 'LOBBY'; syncData = null; staticMap = null;
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('lobby').classList.add('active');
+    document.getElementById('hud').classList.add('hidden');
 });
 
 const lightCanvas = document.createElement('canvas');
 const lightCtx = lightCanvas.getContext('2d');
 
+let resizeListenerAdded = false;
 function resizeCanvas() {
     canvas.width = window.innerWidth; canvas.height = window.innerHeight;
     lightCanvas.width = window.innerWidth; lightCanvas.height = window.innerHeight;
@@ -149,7 +174,7 @@ function updateHUD() {
 }
 
 function renderLoop() {
-    if(gameState !== 'PLAYING') return;
+    if(gameState !== 'PLAYING') { loopRunning = false; return; }
     if(!syncData) { requestAnimationFrame(renderLoop); return; }
     
     let me = syncData.players[myId];
