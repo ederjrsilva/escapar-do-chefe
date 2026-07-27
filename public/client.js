@@ -28,6 +28,7 @@ const AudioSys = {
         osc.start(); osc.stop(this.ctx.currentTime + d);
     },
     bossSpot() { this.playTone(150, 'sawtooth', 0.8, 0.3); },
+    bossSpeak() { this.playTone(220, 'square', 0.12, 0.15); setTimeout(() => this.playTone(180, 'square', 0.15, 0.15), 120); },
     item() { this.playTone(900, 'sine', 0.2, 0.1); this.playTone(1200, 'sine', 0.3, 0.1); },
     heartbeat() { this.playTone(60, 'sine', 0.1, 0.4); setTimeout(() => this.playTone(60, 'sine', 0.2, 0.4), 200); }
 };
@@ -160,6 +161,8 @@ socket.on('playerCaught', (data) => {
     showAlert(isMe ? 'Você foi pego! Modo espectador até o fim da partida...' : `${data.name} foi pego!`, '#ff1744');
 });
 
+socket.on('bossSpeak', () => { AudioSys.bossSpeak(); });
+
 socket.on('audioPlay', (snd) => { if(AudioSys[snd]) AudioSys[snd](); });
 
 socket.on('errorMsg', (msg) => { alert(msg); });
@@ -179,7 +182,14 @@ function updateHUD() {
     let min = String(Math.floor(syncData.time / 60)).padStart(2, '0'); let sec = String(syncData.time % 60).padStart(2, '0');
     document.getElementById('hud-time').innerText = `Tempo: ${min}:${sec}`;
     let objText = document.getElementById('objective-text');
-    objText.innerText = "FUJA DO CHEFE ATÉ A SAÍDA!"; objText.style.color = "#facc15";
+    let gm = syncData.gameManager;
+    if(gm.objectivesCollected < gm.totalObjectives) {
+        objText.innerText = `Colete os itens: ${gm.objectivesCollected}/${gm.totalObjectives}`;
+        objText.style.color = "#facc15";
+    } else {
+        objText.innerText = "CORRAM PARA A SAÍDA!";
+        objText.style.color = "#4caf50";
+    }
     document.getElementById('alive-count').innerText = Object.values(syncData.players).filter(p => !p.isDead).length;
 
     let banner = document.getElementById('spectator-banner');
@@ -212,6 +222,12 @@ function renderLoop() {
 
     drawMap();
 
+    if(syncData.gameManager.activeItem) {
+        let itm = syncData.gameManager.activeItem;
+        ctx.fillStyle = itm.color; ctx.beginPath(); ctx.arc(itm.x + itm.w/2, itm.y + itm.h/2, itm.w/2, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    }
+
     let entities = [ ...Object.values(syncData.players).filter(p => !p.isDead), syncData.boss ].sort((a,b) => a.y - b.y);
     entities.forEach(e => { if(e.hasOwnProperty('stamina')) drawStickmanPlayer(e); else drawBossMan(e); });
 
@@ -242,7 +258,8 @@ function drawMap() {
         ctx.fillText(z.name, z.x + z.w/2, z.y + z.h/2); ctx.textAlign = 'left';
     });
     staticMap.hidingSpots.forEach(s => { ctx.fillStyle = '#64748b'; ctx.fillRect(s.x, s.y, s.w, s.h); });
-    ctx.fillStyle = '#22c55e'; ctx.fillRect(staticMap.exit.x, staticMap.exit.y, staticMap.exit.w, staticMap.exit.h);
+    let exitLocked = syncData.gameManager.objectivesCollected < syncData.gameManager.totalObjectives;
+    ctx.fillStyle = exitLocked ? '#dc2626' : '#22c55e'; ctx.fillRect(staticMap.exit.x, staticMap.exit.y, staticMap.exit.w, staticMap.exit.h);
     ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Roboto'; ctx.fillText("SAÍDA", staticMap.exit.x + 25, staticMap.exit.y - 5);
     staticMap.walls.forEach(w => { ctx.fillStyle = '#0f172a'; ctx.fillRect(w.x, w.y, w.w, w.h); });
 }
@@ -335,6 +352,31 @@ function drawBossMan(b) {
     ctx.strokeStyle = '#000'; ctx.lineWidth = 2; // Sobrancelha
     ctx.beginPath(); ctx.moveTo(cx - 9, headY - 6); ctx.lineTo(cx - 3, headY - 4); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(cx + 9, headY - 6); ctx.lineTo(cx + 3, headY - 4); ctx.stroke();
+
+    if(b.speechTimer > 0 && b.speechText) {
+        ctx.font = 'bold 15px Roboto';
+        let textW = ctx.measureText(b.speechText).width;
+        let bubbleW = textW + 24; let bubbleH = 32;
+        let bx2 = cx - bubbleW/2; let by2 = headY - 70;
+
+        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        ctx.beginPath();
+        ctx.roundRect ? ctx.roundRect(bx2, by2, bubbleW, bubbleH, 8) : ctx.rect(bx2, by2, bubbleW, bubbleH);
+        ctx.fill();
+        ctx.strokeStyle = '#ff1744'; ctx.lineWidth = 2; ctx.stroke();
+
+        // Rabicho do balão apontando pro chefe
+        ctx.beginPath();
+        ctx.moveTo(cx - 8, by2 + bubbleH);
+        ctx.lineTo(cx + 8, by2 + bubbleH);
+        ctx.lineTo(cx, by2 + bubbleH + 10);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fill();
+
+        ctx.fillStyle = '#1e293b'; ctx.textAlign = 'center';
+        ctx.fillText(b.speechText, cx, by2 + bubbleH/2 + 5);
+        ctx.textAlign = 'left';
+    }
 }
 
 function drawLighting(me, viewer) {
