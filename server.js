@@ -9,12 +9,8 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.static('public'));
-// Expõe a pasta 'fotos' publicamente para o jogo carregar as imagens
 app.use('/fotos', express.static(path.join(__dirname, 'fotos')));
 
-// ==========================================
-// ESTADO DO JOGO NO SERVIDOR
-// ==========================================
 let gameState = 'LOBBY'; 
 let players = {};
 let startTime = 0;
@@ -28,6 +24,14 @@ const map = {
         {x: 400, y: 550, w: 600, h: 150},
         {x: 0, y: 400, w: 100, h: 20}, {x: 1300, y: 400, w: 100, h: 20}
     ],
+    furniture: [
+        {x: 80, y: 80, w: 90, h: 50, type: 'desk'},
+        {x: 1210, y: 80, w: 90, h: 50, type: 'desk'},
+        {x: 350, y: 270, w: 100, h: 50, type: 'desk'},
+        {x: 950, y: 270, w: 100, h: 50, type: 'desk'},
+        {x: 480, y: 610, w: 110, h: 50, type: 'desk'},
+        {x: 810, y: 610, w: 110, h: 50, type: 'desk'}
+    ],
     hidingSpots: [
         {x: 50, y: 50, w: 60, h: 60}, {x: 1280, y: 50, w: 60, h: 60},
         {x: 50, y: 800, w: 60, h: 60}, {x: 1280, y: 800, w: 60, h: 60},
@@ -36,6 +40,10 @@ const map = {
     key: { x: 700, y: 450, w: 30, h: 30, collected: false },
     exit: { x: 650, y: 860, w: 100, h: 20, locked: true }
 };
+
+map.furniture.forEach(f => {
+    map.walls.push({ x: f.x, y: f.y, w: f.w, h: f.h });
+});
 
 let boss = {
     x: 700, y: 700, w: 32, h: 32, state: 'PATROL', angle: Math.PI, targetId: null, lastKnownPos: null,
@@ -56,17 +64,11 @@ const searchPhrases = [
     "cadê o Léo?"
 ];
 
-// ==========================================
-// UTILIDADES
-// ==========================================
 function rectIntersect(r1, r2) {
     return !(r2.x > r1.x + r1.w || r2.x + r2.w < r1.x || r2.y > r1.y + r1.h || r2.y + r2.h < r1.y);
 }
 function dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
 
-// ==========================================
-// CONEXÕES SOCKET.IO
-// ==========================================
 const colors = ['#00bcd4', '#e91e63', '#ff9800', '#9c27b0', '#8bc34a', '#ffeb3b'];
 let colorIndex = 0;
 
@@ -77,7 +79,6 @@ io.on('connection', (socket) => {
         return;
     }
 
-    // Envia a lista de fotos disponíveis na pasta /fotos para o cliente
     let photoFiles = [];
     try {
         const fotosDir = path.join(__dirname, 'fotos');
@@ -93,7 +94,7 @@ io.on('connection', (socket) => {
         id: socket.id, ready: false, name: `Jogador ${nextPlayerNumber}`,
         color: colors[colorIndex % colors.length], avatar: null,
         x: 80 + (Object.keys(players).length * 80), y: 80, w: 26, h: 26,
-        stamina: 100, isHidden: false, isMoving: false,
+        stamina: 100, isHidden: false, isMoving: false, isDead: false,
         inputs: { up: false, down: false, left: false, right: false, run: false }
     };
     colorIndex++;
@@ -117,14 +118,14 @@ io.on('connection', (socket) => {
     });
 
     socket.on('input', (inputs) => {
-        if(players[socket.id] && gameState === 'PLAYING') {
+        if(players[socket.id] && gameState === 'PLAYING' && !players[socket.id].isDead) {
             players[socket.id].inputs = inputs;
         }
     });
 
     socket.on('action', (actionType) => {
         let p = players[socket.id];
-        if(!p || gameState !== 'PLAYING') return;
+        if(!p || p.isDead || gameState !== 'PLAYING') return;
 
         if(actionType === 'HIDE') {
             let nearHiding = map.hidingSpots.find(s => rectIntersect(p, {x: s.x-10, y: s.y-10, w: s.w+20, h: s.h+20}));
@@ -180,16 +181,14 @@ function resetGame() {
     io.emit('resetToLobby');
 }
 
-// ==========================================
-// LOOP DO SERVIDOR (30fps)
-// ==========================================
 setInterval(() => {
     if(gameState !== 'PLAYING') return;
 
     let pList = Object.values(players);
 
-    // 1. Jogadores
+    // 1. Movimentação apenas de jogadores vivos
     pList.forEach(p => {
+        if(p.isDead) return;
         if(p.isHidden) {
             p.stamina = Math.min(p.stamina + 0.4, 100); p.isMoving = false; return;
         }
@@ -215,7 +214,7 @@ setInterval(() => {
         if(!hitX) p.x = nextX; if(!hitY) p.y = nextY;
     });
 
-    // 2. Chefe (IA)
+    // 2. IA do Chefe
     let speed = boss.state === 'CHASE' ? 7.2 : 3;
     let targetX = boss.x, targetY = boss.y;
 
@@ -224,7 +223,7 @@ setInterval(() => {
         targetX = wp.x; targetY = wp.y;
         if(dist(boss.x, boss.y, wp.x, wp.y) < 15) boss.wpIndex = (boss.wpIndex + 1) % boss.waypoints.length;
     } 
-    else if(boss.state === 'CHASE' && players[boss.targetId]) {
+    else if(boss.state === 'CHASE' && players[boss.targetId] && !players[boss.targetId].isDead) {
         targetX = players[boss.targetId].x; targetY = players[boss.targetId].y;
         boss.lastKnownPos = {x: targetX, y: targetY};
     } 
@@ -265,9 +264,10 @@ setInterval(() => {
     });
     if(!hitX) boss.x = nextX; if(!hitY) boss.y = nextY;
 
+    // Procura por alvos que NÃO estejam mortos ou escondidos
     let closestP = null; let closestDist = Infinity;
     pList.forEach(p => {
-        if(p.isHidden) return;
+        if(p.isDead || p.isHidden) return;
         let d = dist(boss.x, boss.y, p.x, p.y);
         if(d < 400) {
             let angleTo = Math.atan2(p.y - boss.y, p.x - boss.x);
@@ -295,12 +295,22 @@ setInterval(() => {
         boss.state = 'SEARCH'; boss.targetId = null;
     }
 
+    // 3. Checagem de captura individual
     pList.forEach(p => {
-        if(!p.isHidden && rectIntersect(p, boss)) {
-            io.emit('gameOver', { won: false, msg: `Peguei você, nó cego 😠 ${p.name}!` });
-            resetGame();
+        if(!p.isDead && !p.isHidden && rectIntersect(p, boss)) {
+            p.isDead = true;
+            p.isHidden = false;
+            io.emit('playerCaught', { id: p.id, name: p.name });
+            io.emit('audioPlay', 'alert');
         }
     });
+
+    // 4. O jogo só termina se TODOS os jogadores estiverem mortos
+    let activePlayers = pList.filter(p => !p.isDead);
+    if(pList.length > 0 && activePlayers.length === 0) {
+        io.emit('gameOver', { won: false, msg: "O Chefe pegou todo mundo! Fim de jogo." });
+        resetGame();
+    }
 
     io.emit('syncState', {
         players: players,
