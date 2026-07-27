@@ -40,14 +40,7 @@ const map = {
     exit: { x: MAP_W/2 - 50, y: MAP_H - 40, w: 100, h: 20 }
 };
 
-const ALL_OBJECTIVES = [
-    { type: 'ID_CARD', name: 'Encontrar Crachá', desc: 'Procure o crachá azul' },
-    { type: 'DOCUMENTS', name: 'Recuperar Prontuários', desc: 'Pegue os documentos vermelhos' },
-    { type: 'POWER', name: 'Religar Energia', desc: 'Ative o painel amarelo' },
-    { type: 'KEY', name: 'Pegar Chave de Fuga', desc: 'Encontre a chave dourada' }
-];
-
-let gameManager = { objectivesList: [], currentObjectiveIndex: 0, activeItem: null, globalEvent: 'NONE', eventTimer: 0 };
+let gameManager = { level: 1, globalEvent: 'NONE', eventTimer: 0 };
 
 let boss = {
     x: MAP_W/2, y: MAP_H/2, w: 32, h: 32, state: 'PATROL', angle: 0, targetId: null, lastKnownPos: null,
@@ -107,9 +100,7 @@ io.on('connection', (socket) => {
             else if (p.isHidden) p.isHidden = false;
         }
         if(actionType === 'INTERACT' && !p.isHidden) {
-            if(gameManager.activeItem && rectIntersect(p, gameManager.activeItem)) {
-                io.emit('audioPlay', 'item'); gameManager.currentObjectiveIndex++; spawnNextObjective();
-            } else if(gameManager.currentObjectiveIndex >= gameManager.objectivesList.length && rectIntersect(p, {x: map.exit.x, y: map.exit.y - 20, w: map.exit.w, h: map.exit.h + 20})) {
+            if(rectIntersect(p, {x: map.exit.x, y: map.exit.y - 20, w: map.exit.w, h: map.exit.h + 20})) {
                 p.isDead = true; p.saved = true; socket.emit('gameOver', { won: true, msg: "Você escapou!" }); checkEndGameCondition();
             }
         }
@@ -118,22 +109,12 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => { delete players[socket.id]; io.emit('lobbyUpdate', Object.values(players)); if(Object.keys(players).length === 0) resetGame(); });
 });
 
-function spawnNextObjective() {
-    if(gameManager.currentObjectiveIndex < gameManager.objectivesList.length) {
-        let curr = gameManager.objectivesList[gameManager.currentObjectiveIndex];
-        gameManager.activeItem = { x: 300 + Math.random()*1000, y: 300 + Math.random()*800, w: 30, h: 30, color: '#facc15', type: curr.type };
-        io.emit('bossAlert', `Novo Objetivo: ${curr.name}`);
-    } else {
-        gameManager.activeItem = null; io.emit('bossAlert', "Tudo concluído! CORRA PARA A SAÍDA!");
-    }
-}
-
 function checkGameStart() {
     let pList = Object.values(players);
     if(pList.length > 0 && pList.every(p => p.ready && p.avatar)) {
         gameState = 'PLAYING'; startTime = Date.now();
-        gameManager.objectivesList = [...ALL_OBJECTIVES].sort(() => Math.random() - 0.5);
-        gameManager.currentObjectiveIndex = 0; spawnNextObjective();
+        gameManager.level = 1;
+        io.emit('bossAlert', "Escape do Chefe e corra para a saída!");
         io.emit('gameStart', map);
     }
 }
@@ -142,16 +123,23 @@ function checkEndGameCondition() {
     let pList = Object.values(players); let aliveAndNotSaved = pList.filter(p => !p.isDead);
     if(pList.length > 0 && aliveAndNotSaved.length === 0) {
         let anyoneSaved = pList.some(p => p.saved);
+        gameState = 'GAMEOVER';
         io.emit('gameOver', { won: anyoneSaved, msg: anyoneSaved ? "Fim da partida. Sobreviventes escaparam!" : "O Chefe pegou todos!" });
-        resetGame();
+        // Espera um pouco antes de voltar todo mundo pro lobby, pra dar tempo de ler a mensagem
+        setTimeout(resetGame, 5000);
     }
 }
 
 function resetGame() {
     gameState = 'LOBBY';
     boss = { x: MAP_W/2, y: MAP_H/2, w: 32, h: 32, state: 'PATROL', angle: 0, targetId: null, lastKnownPos: null, wpIndex: 0, prevX: 0, prevY: 0, stuckTimer: 0, isMoving: false };
-    Object.values(players).forEach(p => { p.isDead = false; p.saved = false; p.isHidden = false; });
+    gameManager.level = 1; gameManager.globalEvent = 'NONE'; gameManager.eventTimer = 0;
+    // Reseta o "pronto" de todo mundo também — sem isso, o lobby ficava travado
+    // em "Iniciando..." pra sempre depois de uma partida, pois todo mundo
+    // continuava marcado como pronto sem ninguém apertar o botão de novo.
+    Object.values(players).forEach(p => { p.isDead = false; p.saved = false; p.isHidden = false; p.ready = false; });
     io.emit('resetToLobby');
+    io.emit('lobbyUpdate', Object.values(players));
 }
 
 setInterval(() => {
@@ -162,6 +150,16 @@ setInterval(() => {
         io.emit('bossAlert', gameManager.globalEvent === 'BLACKOUT' ? "ALERTA: QUEDA DE ENERGIA!" : "ALERTA: ALARME DISPARADO!");
     }
     if(gameManager.eventTimer > 0) { gameManager.eventTimer--; if(gameManager.eventTimer <= 0) gameManager.globalEvent = 'NONE'; }
+
+    // A cada 1 minuto de partida, o chefe fica um pouco mais rápido.
+    let elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+    let newLevel = 1 + Math.floor(elapsedSeconds / 60);
+    if(newLevel !== gameManager.level) {
+        gameManager.level = newLevel;
+        io.emit('bossAlert', `Level ${newLevel}! O Chefe está mais rápido...`);
+        io.emit('audioPlay', 'bossSpot');
+    }
+    let speedMultiplier = 1 + (gameManager.level - 1) * 0.12;
 
     let pList = Object.values(players);
 
@@ -193,7 +191,7 @@ setInterval(() => {
         if(!hitX) p.x = nextX; if(!hitY) p.y = nextY;
     });
 
-    let speed = boss.state === 'CHASE' ? 8.5 : 3.5;
+    let speed = (boss.state === 'CHASE' ? 8.5 : 3.5) * speedMultiplier;
     let targetX = boss.x, targetY = boss.y;
 
     if(boss.state === 'PATROL') {
@@ -280,7 +278,7 @@ setInterval(() => {
 
     pList.forEach(p => {
         if(!p.isDead && !p.isHidden && rectIntersect(p, boss)) {
-            p.isDead = true; p.isHidden = false; io.emit('playerCaught', { id: p.id }); checkEndGameCondition();
+            p.isDead = true; p.isHidden = false; io.emit('playerCaught', { id: p.id, name: p.name }); checkEndGameCondition();
         }
     });
 
