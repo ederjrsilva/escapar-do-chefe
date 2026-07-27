@@ -143,9 +143,21 @@ function resizeCanvas() {
 
 socket.on('syncState', (state) => { syncData = state; updateHUD(); });
 
-socket.on('bossAlert', (msg) => {
-    let alertDiv = document.getElementById('hud-alert'); document.getElementById('alert-text').innerText = msg;
-    alertDiv.classList.remove('hidden'); setTimeout(() => { alertDiv.classList.add('hidden'); }, 4000);
+function showAlert(msg, color) {
+    let alertDiv = document.getElementById('hud-alert');
+    let textEl = document.getElementById('alert-text');
+    textEl.innerText = msg;
+    textEl.style.color = color || '#ff1744';
+    alertDiv.classList.remove('hidden');
+    clearTimeout(showAlert._t);
+    showAlert._t = setTimeout(() => { alertDiv.classList.add('hidden'); }, 4000);
+}
+
+socket.on('bossAlert', (msg) => showAlert(msg, '#ff1744'));
+
+socket.on('playerCaught', (data) => {
+    let isMe = data.id === myId;
+    showAlert(isMe ? 'Você foi pego! Modo espectador até o fim da partida...' : `${data.name} foi pego!`, '#ff1744');
 });
 
 socket.on('audioPlay', (snd) => { if(AudioSys[snd]) AudioSys[snd](); });
@@ -166,11 +178,14 @@ function updateHUD() {
     document.getElementById('stamina-fill').style.width = `${me.stamina}%`; document.getElementById('noise-fill').style.width = `${me.noise}%`;
     let min = String(Math.floor(syncData.time / 60)).padStart(2, '0'); let sec = String(syncData.time % 60).padStart(2, '0');
     document.getElementById('hud-time').innerText = `Tempo: ${min}:${sec}`;
-    let gm = syncData.gameManager;
-    if(gm.currentObjectiveIndex < gm.objectivesList.length) {
-        document.getElementById('objective-text').innerText = gm.objectivesList[gm.currentObjectiveIndex].name;
-    } else { document.getElementById('objective-text').innerText = "FUJA PELA SAÍDA!"; document.getElementById('objective-text').style.color = "#4caf50"; }
+    let objText = document.getElementById('objective-text');
+    objText.innerText = "FUJA DO CHEFE ATÉ A SAÍDA!"; objText.style.color = "#facc15";
     document.getElementById('alive-count').innerText = Object.values(syncData.players).filter(p => !p.isDead).length;
+
+    let banner = document.getElementById('spectator-banner');
+    if(banner) {
+        if(me.isDead && !me.saved) banner.classList.remove('hidden'); else banner.classList.add('hidden');
+    }
 }
 
 function renderLoop() {
@@ -181,6 +196,12 @@ function renderLoop() {
     if(me && !me.isDead) {
         camera.x = (me.x + me.w/2) - canvas.width/2;
         camera.y = (me.y + me.h/2) - canvas.height/2;
+    } else {
+        // Espectador: segue outro jogador vivo, ou o chefe se não sobrar ninguém
+        let alive = Object.values(syncData.players).find(p => !p.isDead);
+        let follow = alive || syncData.boss;
+        camera.x = (follow.x + follow.w/2) - canvas.width/2;
+        camera.y = (follow.y + follow.h/2) - canvas.height/2;
     }
     
     camera.x = Math.max(0, Math.min(camera.x, staticMap.w - canvas.width));
@@ -190,19 +211,14 @@ function renderLoop() {
     ctx.save(); ctx.translate(-camera.x, -camera.y);
 
     drawMap();
-    
-    if(syncData.gameManager.activeItem) {
-        let itm = syncData.gameManager.activeItem;
-        ctx.fillStyle = itm.color; ctx.beginPath(); ctx.arc(itm.x + itm.w/2, itm.y + itm.h/2, itm.w/2, 0, Math.PI*2); ctx.fill();
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
-    }
 
     let entities = [ ...Object.values(syncData.players).filter(p => !p.isDead), syncData.boss ].sort((a,b) => a.y - b.y);
     entities.forEach(e => { if(e.hasOwnProperty('stamina')) drawStickmanPlayer(e); else drawBossMan(e); });
 
     ctx.restore(); 
     
-    drawLighting(me); // Sistema de sombras avançado com recortes perfeitos
+    let viewer = (me && !me.isDead) ? me : Object.values(syncData.players).find(p => !p.isDead);
+    drawLighting(me, viewer); // Sistema de sombras avançado com recortes perfeitos
     
     if(me && !me.isDead) {
         let distToBoss = Math.hypot(syncData.boss.x - me.x, syncData.boss.y - me.y);
@@ -226,8 +242,7 @@ function drawMap() {
         ctx.fillText(z.name, z.x + z.w/2, z.y + z.h/2); ctx.textAlign = 'left';
     });
     staticMap.hidingSpots.forEach(s => { ctx.fillStyle = '#64748b'; ctx.fillRect(s.x, s.y, s.w, s.h); });
-    let exitLocked = syncData.gameManager.currentObjectiveIndex < syncData.gameManager.objectivesList.length;
-    ctx.fillStyle = exitLocked ? '#dc2626' : '#22c55e'; ctx.fillRect(staticMap.exit.x, staticMap.exit.y, staticMap.exit.w, staticMap.exit.h);
+    ctx.fillStyle = '#22c55e'; ctx.fillRect(staticMap.exit.x, staticMap.exit.y, staticMap.exit.w, staticMap.exit.h);
     ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Roboto'; ctx.fillText("SAÍDA", staticMap.exit.x + 25, staticMap.exit.y - 5);
     staticMap.walls.forEach(w => { ctx.fillStyle = '#0f172a'; ctx.fillRect(w.x, w.y, w.w, w.h); });
 }
@@ -322,7 +337,7 @@ function drawBossMan(b) {
     ctx.beginPath(); ctx.moveTo(cx + 9, headY - 6); ctx.lineTo(cx + 3, headY - 4); ctx.stroke();
 }
 
-function drawLighting(me) {
+function drawLighting(me, viewer) {
     let isBlackout = syncData.gameManager.globalEvent === 'BLACKOUT';
 
     // IMPORTANTE: a escuridão e os "furos" de luz são montados numa camada
@@ -336,9 +351,10 @@ function drawLighting(me) {
 
     lightCtx.globalCompositeOperation = 'destination-out';
 
-    // Fura a escuridão em cima do Jogador
-    if(me && !me.isDead) {
-        let cx = me.x - camera.x + me.w/2; let cy = me.y - camera.y + me.h/2;
+    // Fura a escuridão em cima de quem a câmera está seguindo (você, ou o
+    // jogador vivo que você está assistindo se já foi pego)
+    if(viewer) {
+        let cx = viewer.x - camera.x + viewer.w/2; let cy = viewer.y - camera.y + viewer.h/2;
         let grad = lightCtx.createRadialGradient(cx, cy, 0, cx, cy, isBlackout ? 150 : 350);
         grad.addColorStop(0, 'rgba(255,255,255,1)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
         lightCtx.fillStyle = grad; lightCtx.beginPath(); lightCtx.arc(cx, cy, isBlackout ? 150 : 350, 0, Math.PI*2); lightCtx.fill();
