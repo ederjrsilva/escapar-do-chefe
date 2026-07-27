@@ -24,14 +24,6 @@ const map = {
         {x: 400, y: 550, w: 600, h: 150},
         {x: 0, y: 400, w: 100, h: 20}, {x: 1300, y: 400, w: 100, h: 20}
     ],
-    furniture: [
-        {x: 80, y: 80, w: 90, h: 50, type: 'desk'},
-        {x: 1210, y: 80, w: 90, h: 50, type: 'desk'},
-        {x: 350, y: 270, w: 100, h: 50, type: 'desk'},
-        {x: 950, y: 270, w: 100, h: 50, type: 'desk'},
-        {x: 480, y: 610, w: 110, h: 50, type: 'desk'},
-        {x: 810, y: 610, w: 110, h: 50, type: 'desk'}
-    ],
     hidingSpots: [
         {x: 50, y: 50, w: 60, h: 60}, {x: 1280, y: 50, w: 60, h: 60},
         {x: 50, y: 800, w: 60, h: 60}, {x: 1280, y: 800, w: 60, h: 60},
@@ -41,17 +33,17 @@ const map = {
     exit: { x: 650, y: 860, w: 100, h: 20, locked: true }
 };
 
-map.furniture.forEach(f => {
-    map.walls.push({ x: f.x, y: f.y, w: f.w, h: f.h });
-});
-
 let boss = {
     x: 700, y: 700, w: 32, h: 32, state: 'PATROL', angle: Math.PI, targetId: null, lastKnownPos: null,
-    waypoints: [{x:700, y:800}, {x:100, y:800}, {x:100, y:100}, {x:700, y:100}, {x:1300, y:100}, {x:1300, y:800}, {x:700, y:800}],
+    // Waypoints ajustados para longe das quinas e barreiras laterais
+    waypoints: [{x:700, y:820}, {x:150, y:820}, {x:150, y:100}, {x:700, y:100}, {x:1250, y:100}, {x:1250, y:820}],
     wpIndex: 0,
     currentSpeech: "",
     speechTimer: 0,
-    speechCooldown: 0
+    speechCooldown: 0,
+    // Variáveis do sistema anti-stuck
+    prevX: 700, prevY: 700,
+    stuckTimer: 0
 };
 
 const searchPhrases = [
@@ -172,6 +164,9 @@ function resetGame() {
     map.exit.locked = true;
     boss.x = 700; 
     boss.y = 700;
+    boss.prevX = 700;
+    boss.prevY = 700;
+    boss.stuckTimer = 0;
     boss.state = 'PATROL'; 
     boss.targetId = null;
     boss.wpIndex = 0;
@@ -186,7 +181,7 @@ setInterval(() => {
 
     let pList = Object.values(players);
 
-    // 1. Movimentação apenas de jogadores vivos
+    // 1. Movimentação dos jogadores
     pList.forEach(p => {
         if(p.isDead) return;
         if(p.isHidden) {
@@ -264,7 +259,29 @@ setInterval(() => {
     });
     if(!hitX) boss.x = nextX; if(!hitY) boss.y = nextY;
 
-    // Procura por alvos que NÃO estejam mortos ou escondidos
+    // --- Sistema Anti-Stuck do Boss ---
+    // Se ele se moveu menos que 0.5 pixels neste quadro, ele incrementa o timer
+    if (Math.abs(boss.x - boss.prevX) < 0.5 && Math.abs(boss.y - boss.prevY) < 0.5 && boss.state !== 'SEARCH') {
+        boss.stuckTimer++;
+        if (boss.stuckTimer > 45) { // Passou 1.5 segundo completamente preso
+            if (boss.state === 'PATROL') {
+                // Pula pro próximo waypoint
+                boss.wpIndex = (boss.wpIndex + 1) % boss.waypoints.length;
+            } else if (boss.state === 'CHASE') {
+                // Desiste da perseguição pra não ficar esfregando a cara na parede
+                boss.state = 'SEARCH';
+                boss.targetId = null;
+            }
+            boss.stuckTimer = 0;
+        }
+    } else {
+        boss.stuckTimer = 0; // Se andou normalmente, reseta
+    }
+    
+    boss.prevX = boss.x;
+    boss.prevY = boss.y;
+    // ----------------------------------
+
     let closestP = null; let closestDist = Infinity;
     pList.forEach(p => {
         if(p.isDead || p.isHidden) return;
@@ -295,7 +312,6 @@ setInterval(() => {
         boss.state = 'SEARCH'; boss.targetId = null;
     }
 
-    // 3. Checagem de captura individual
     pList.forEach(p => {
         if(!p.isDead && !p.isHidden && rectIntersect(p, boss)) {
             p.isDead = true;
@@ -305,7 +321,6 @@ setInterval(() => {
         }
     });
 
-    // 4. O jogo só termina se TODOS os jogadores estiverem mortos
     let activePlayers = pList.filter(p => !p.isDead);
     if(pList.length > 0 && activePlayers.length === 0) {
         io.emit('gameOver', { won: false, msg: "O Chefe pegou todo mundo! Fim de jogo." });
