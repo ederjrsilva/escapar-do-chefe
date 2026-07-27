@@ -86,7 +86,15 @@ io.on('connection', (socket) => {
     });
 
     socket.on('setReady', (isReady) => {
-        if(players[socket.id]) { players[socket.id].ready = isReady; io.emit('lobbyUpdate', Object.values(players)); checkGameStart(); }
+        let p = players[socket.id];
+        if(!p) return;
+        if(isReady && !p.avatar) {
+            socket.emit('errorMsg', 'Escolha uma foto antes de ficar pronto!');
+            return;
+        }
+        p.ready = isReady;
+        io.emit('lobbyUpdate', Object.values(players));
+        checkGameStart();
     });
 
     socket.on('input', (inputs) => { if(players[socket.id] && gameState === 'PLAYING' && !players[socket.id].isDead) players[socket.id].inputs = inputs; });
@@ -122,7 +130,7 @@ function spawnNextObjective() {
 
 function checkGameStart() {
     let pList = Object.values(players);
-    if(pList.length > 0 && pList.every(p => p.ready)) {
+    if(pList.length > 0 && pList.every(p => p.ready && p.avatar)) {
         gameState = 'PLAYING'; startTime = Date.now();
         gameManager.objectivesList = [...ALL_OBJECTIVES].sort(() => Math.random() - 0.5);
         gameManager.currentObjectiveIndex = 0; spawnNextObjective();
@@ -240,16 +248,21 @@ setInterval(() => {
     let closestDist = Infinity; let closestP = null;
     let sightRadius = gameManager.globalEvent === 'BLACKOUT' ? 250 : 500;
 
+    const PROXIMITY_ALERT_RANGE = 70; // se o jogador chegar bem perto, o chefe sempre percebe, mesmo de costas
+
     pList.forEach(p => {
         if(p.isDead || p.isHidden) return;
         let d = dist(boss.x, boss.y, p.x, p.y);
-        let isHeard = d < (p.noise * 3); 
+        // Raio de audição maior e com piso mínimo, pra "andando perto" já ser suficiente pra ouvir
+        let isHeard = d < (30 + p.noise * 6);
         let isSeen = false;
+        let isClose = d < PROXIMITY_ALERT_RANGE;
         if(d < sightRadius) {
             let angleTo = Math.atan2(p.y - boss.y, p.x - boss.x);
             let angleDiff = Math.abs(boss.angle - angleTo);
             if(angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
-            if(angleDiff < Math.PI / 2.5) {
+            // Campo de visão um pouco mais largo (era PI/2.5)
+            if(angleDiff < Math.PI / 2 || isClose) {
                 let hasLOS = true;
                 map.walls.forEach(w => { 
                     if (Math.min(boss.x, p.x) < w.x+w.w && Math.max(boss.x, p.x) > w.x && Math.min(boss.y, p.y) < w.y+w.h && Math.max(boss.y, p.y) > w.y) hasLOS = false;
@@ -257,7 +270,7 @@ setInterval(() => {
                 isSeen = hasLOS;
             }
         }
-        if((isSeen || isHeard) && d < closestDist) { closestDist = d; closestP = p; }
+        if((isSeen || isHeard || isClose) && d < closestDist) { closestDist = d; closestP = p; }
     });
 
     if(closestP) {
