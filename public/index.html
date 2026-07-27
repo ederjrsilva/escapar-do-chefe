@@ -2,79 +2,38 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Hospital Escape</title>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Roboto', sans-serif; color: #fff; }
-        .screen { display: none; width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; flex-direction: column; align-items: center; justify-content: center; }
-        .screen.active { display: flex; }
-        #lobby { background: #0f172a; }
-        #lobby-grid { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; max-width: 800px; margin: 20px; }
-        .player-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; width: 180px; border: 2px solid transparent; }
-        .player-card.ready { border-color: #4caf50; }
-        .player-card.me { box-shadow: 0 0 15px rgba(56, 189, 248, 0.5); }
-        .avatar-img { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; margin: 10px auto; border: 2px solid #fff; cursor: pointer; display: block; }
-        
-        #photo-modal { display: none; position: fixed; top: 10%; left: 50%; transform: translateX(-50%); background: #1e293b; padding: 20px; border: 2px solid #475569; border-radius: 10px; z-index: 100; max-width: 500px; text-align: center; }
-        .photo-option { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; margin: 5px; cursor: pointer; border: 2px solid transparent; }
-        .photo-option:hover { border-color: #38bdf8; }
-
-        button { padding: 10px 20px; font-size: 16px; font-weight: bold; cursor: pointer; border: none; border-radius: 5px; background: #38bdf8; color: #000; transition: 0.2s; }
-        button:hover { background: #0284c7; color: #fff; }
-        
-        #hud { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; display: flex; flex-direction: column; justify-content: space-between; }
-        #hud.hidden { display: none; }
-        .hud-top, .hud-bottom { display: flex; justify-content: space-between; padding: 20px; }
-        .hud-box { background: rgba(15, 23, 42, 0.8); border: 2px solid #334155; padding: 15px; border-radius: 8px; pointer-events: auto; }
-        #objective-text { color: #facc15; font-weight: bold; font-size: 18px; margin-top: 5px; }
-        #minimap-container { width: 150px; height: 150px; background: rgba(0,0,0,0.5); border: 2px solid #475569; position: relative; }
-        .status-bar-container { display: flex; flex-direction: column; gap: 10px; width: 250px; }
-        .bar-wrap { background: #1e293b; height: 20px; border-radius: 10px; overflow: hidden; border: 1px solid #475569; position: relative; }
-        .bar-fill { height: 100%; width: 100%; transition: width 0.1s; }
-        #stamina-fill { background: #38bdf8; }
-        #noise-fill { background: #ef4444; width: 0%; }
-        .bar-label { position: absolute; top: 2px; left: 10px; font-size: 12px; font-weight: bold; text-shadow: 1px 1px 2px #000; }
-        #hud-alert { position: absolute; top: 20%; left: 50%; transform: translateX(-50%); text-align: center; color: #ef4444; font-size: 32px; font-weight: bold; text-shadow: 2px 2px 5px #000; }
-        .hidden { display: none !important; }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Escapar do Chefe</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="lobby" class="screen active">
-        <h1>🏥 HOSPITAL ESCAPE</h1>
-        <div id="lobby-grid"></div>
-        <button id="btn-start" style="margin-top:20px;">Aguardando jogadores...</button>
-    </div>
-
-    <!-- Modal para selecionar foto -->
-    <div id="photo-modal">
-        <h3>Escolha seu rosto</h3>
-        <div id="photo-list" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;"></div>
-        <button onclick="document.getElementById('photo-modal').style.display='none'" style="margin-top:15px;">Fechar</button>
-    </div>
-
-    <div id="hud" class="hidden">
-        <div class="hud-top">
-            <div class="hud-box">
-                <div>OBJETIVO ATUAL:</div><div id="objective-text">Aguardando...</div>
-                <div style="font-size: 12px; color:#94a3b8; margin-top:5px;" id="hud-time">Tempo: 00:00</div>
+    <div id="lobby" class="screen">
+        <h1>Escapar do Chefe</h1>
+        <p>Digite seu nome e selecione sua foto de perfil para iniciar:</p>
+        
+        <input type="text" id="playerName" placeholder="Seu Nome" maxlength="15" autocomplete="off">
+        
+        <div class="photo-container">
+            <p>Escolha sua foto (Obrigatório):</p>
+            <div class="photo-grid">
+                <img src="fotos/foto1.jpg" alt="Foto 1" class="photo-option" data-photo="fotos/foto1.jpg">
+                <img src="fotos/foto2.jpg" alt="Foto 2" class="photo-option" data-photo="fotos/foto2.jpg">
+                <img src="fotos/foto3.jpeg" alt="Foto 3" class="photo-option" data-photo="fotos/foto3.jpeg">
+                <img src="fotos/foto4.jpg" alt="Foto 4" class="photo-option" data-photo="fotos/foto4.jpg">
+                <img src="fotos/foto5.jpg" alt="Foto 5" class="photo-option" data-photo="fotos/foto5.jpg">
+                <img src="fotos/foto6.jpg" alt="Foto 6" class="photo-option" data-photo="fotos/foto6.jpg">
             </div>
-            <div id="minimap-container"><canvas id="minimapCanvas" width="150" height="150"></canvas></div>
         </div>
-        <div class="hud-bottom">
-            <div class="hud-box status-bar-container">
-                <div class="bar-wrap"><div class="bar-fill" id="stamina-fill"></div><div class="bar-label">ENERGIA (Shift)</div></div>
-                <div class="bar-wrap"><div class="bar-fill" id="noise-fill"></div><div class="bar-label">RUÍDO (Ctrl)</div></div>
-            </div>
-            <div class="hud-box"><div>SOBREVIVENTES: <span id="alive-count">0</span></div></div>
-        </div>
-        <div id="hud-alert" class="hidden"><span id="alert-text"></span></div>
+
+        <button id="startButton" disabled>Entrar no Jogo</button>
+        <p id="error-msg" class="error-hidden">Por favor, selecione uma foto antes de iniciar!</p>
     </div>
 
-    <canvas id="gameCanvas"></canvas>
-    
-    <div id="game-over" class="screen">
-        <h1 id="end-title"></h1><p id="end-msg"></p>
-        <button onclick="location.reload()">Voltar ao Lobby</button>
+    <div id="game-container" class="screen hidden">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="game-ui">
+            <span>Use W, A, S, D ou Setas para mover. Fuga do Chefe!</span>
+        </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
