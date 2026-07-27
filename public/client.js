@@ -134,7 +134,15 @@ function updateHUD() {
 }
 
 function renderLoop() {
-    if(gameState !== 'PLAYING' || !syncData) return;
+    if(gameState !== 'PLAYING') return;
+    
+    // CORREÇÃO DO BUG DA TELA PRETA:
+    // Se o syncData ainda não chegou do servidor, devemos aguardar continuando o loop.
+    // Antes ele dava return e o renderLoop morria para sempre.
+    if(!syncData) {
+        requestAnimationFrame(renderLoop);
+        return; 
+    }
     
     let me = syncData.players[myId];
     if(me && !me.isDead) {
