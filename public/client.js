@@ -81,9 +81,19 @@ socket.on('lobbyUpdate', (playersArray) => {
         
         card.innerHTML = `<h3>${p.name}</h3>${avatarHTML}<p>${p.ready ? 'Pronto ✓' : 'Aguardando...'}</p>`;
         if(isMe && !p.ready) {
-            let btn = document.createElement('button'); btn.innerText = "Estou Pronto!";
-            btn.onclick = () => { AudioSys.ctx.resume(); socket.emit('setReady', true); };
-            card.appendChild(btn);
+            if(p.avatar) {
+                let btn = document.createElement('button'); btn.innerText = "Estou Pronto!";
+                btn.onclick = () => { AudioSys.ctx.resume(); socket.emit('setReady', true); };
+                card.appendChild(btn);
+            } else {
+                let hint = document.createElement('p');
+                hint.innerText = "Escolha uma foto para continuar 📸";
+                hint.style.color = '#facc15'; hint.style.fontSize = '13px';
+                card.appendChild(hint);
+                let btn = document.createElement('button'); btn.innerText = "Escolher Foto";
+                btn.onclick = () => openPhotoModal();
+                card.appendChild(btn);
+            }
         }
         grid.appendChild(card);
     });
@@ -98,7 +108,13 @@ socket.on('gameStart', (mapData) => {
     requestAnimationFrame(renderLoop);
 });
 
-function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+const lightCanvas = document.createElement('canvas');
+const lightCtx = lightCanvas.getContext('2d');
+
+function resizeCanvas() {
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+    lightCanvas.width = window.innerWidth; lightCanvas.height = window.innerHeight;
+}
 
 socket.on('syncState', (state) => { syncData = state; updateHUD(); });
 
@@ -108,6 +124,8 @@ socket.on('bossAlert', (msg) => {
 });
 
 socket.on('audioPlay', (snd) => { if(AudioSys[snd]) AudioSys[snd](); });
+
+socket.on('errorMsg', (msg) => { alert(msg); });
 
 socket.on('gameOver', (data) => {
     gameState = 'GAMEOVER'; document.getElementById('hud').classList.add('hidden');
@@ -281,42 +299,52 @@ function drawBossMan(b) {
 
 function drawLighting(me) {
     let isBlackout = syncData.gameManager.globalEvent === 'BLACKOUT';
-    ctx.fillStyle = isBlackout ? 'rgba(0, 0, 0, 0.98)' : 'rgba(15, 23, 42, 0.8)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    ctx.globalCompositeOperation = 'destination-out';
-    
+
+    // IMPORTANTE: a escuridão e os "furos" de luz são montados numa camada
+    // separada (lightCanvas), NÃO diretamente em cima do jogo já desenhado.
+    // Antes, o destination-out apagava pedaços dos próprios personagens
+    // (por isso eles ficavam escuros/invisíveis perto de si mesmos ou do chefe).
+    lightCtx.clearRect(0, 0, lightCanvas.width, lightCanvas.height);
+    lightCtx.globalCompositeOperation = 'source-over';
+    lightCtx.fillStyle = isBlackout ? 'rgba(0, 0, 0, 0.98)' : 'rgba(15, 23, 42, 0.8)';
+    lightCtx.fillRect(0, 0, lightCanvas.width, lightCanvas.height);
+
+    lightCtx.globalCompositeOperation = 'destination-out';
+
     // Fura a escuridão em cima do Jogador
     if(me && !me.isDead) {
         let cx = me.x - camera.x + me.w/2; let cy = me.y - camera.y + me.h/2;
-        let grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, isBlackout ? 150 : 350);
+        let grad = lightCtx.createRadialGradient(cx, cy, 0, cx, cy, isBlackout ? 150 : 350);
         grad.addColorStop(0, 'rgba(255,255,255,1)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(cx, cy, isBlackout ? 150 : 350, 0, Math.PI*2); ctx.fill();
+        lightCtx.fillStyle = grad; lightCtx.beginPath(); lightCtx.arc(cx, cy, isBlackout ? 150 : 350, 0, Math.PI*2); lightCtx.fill();
     }
-    
+
     // Fura a escuridão em volta do Boss
     let b = syncData.boss;
     let bx = b.x - camera.x + b.w/2; let by = b.y - camera.y + b.h/2;
-    let bGrad = ctx.createRadialGradient(bx, by, 0, bx, by, 150);
+    let bGrad = lightCtx.createRadialGradient(bx, by, 0, bx, by, 150);
     bGrad.addColorStop(0, 'rgba(255,255,255,0.9)'); bGrad.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = bGrad; ctx.beginPath(); ctx.arc(bx, by, 150, 0, Math.PI*2); ctx.fill();
+    lightCtx.fillStyle = bGrad; lightCtx.beginPath(); lightCtx.arc(bx, by, 150, 0, Math.PI*2); lightCtx.fill();
 
-    // A Lanterna do Boss AGORA CORTA A ESCURIDÃO permitindo ver o mapa e personagens debaixo!
+    // A Lanterna do Boss corta a escuridão permitindo ver o mapa e personagens debaixo
     let coneLength = isBlackout ? 250 : 500;
-    let coneGrad = ctx.createRadialGradient(bx, by, 20, bx, by, coneLength);
+    let coneGrad = lightCtx.createRadialGradient(bx, by, 20, bx, by, coneLength);
     coneGrad.addColorStop(0, 'rgba(255,255,255,0.9)'); coneGrad.addColorStop(1, 'rgba(255,255,255,0)');
-    
-    ctx.fillStyle = coneGrad;
-    ctx.beginPath(); ctx.moveTo(bx, by); 
-    ctx.arc(bx, by, coneLength, b.angle - Math.PI/5, b.angle + Math.PI/5); 
-    ctx.lineTo(bx, by); ctx.fill();
 
-    ctx.globalCompositeOperation = 'source-over';
+    lightCtx.fillStyle = coneGrad;
+    lightCtx.beginPath(); lightCtx.moveTo(bx, by);
+    lightCtx.arc(bx, by, coneLength, b.angle - Math.PI/5, b.angle + Math.PI/5);
+    lightCtx.lineTo(bx, by); lightCtx.fill();
+
+    lightCtx.globalCompositeOperation = 'source-over';
+
+    // Cola a camada de escuridão (já com os furos) por cima do jogo, sem apagar os sprites
+    ctx.drawImage(lightCanvas, 0, 0);
 
     // Desenha uma lente colorida volumétrica bem leve por cima da lanterna do boss (Amarela ou Vermelha)
     ctx.fillStyle = b.state === 'CHASE' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)';
-    ctx.beginPath(); ctx.moveTo(bx, by); 
-    ctx.arc(bx, by, coneLength, b.angle - Math.PI/5, b.angle + Math.PI/5); 
+    ctx.beginPath(); ctx.moveTo(bx, by);
+    ctx.arc(bx, by, coneLength, b.angle - Math.PI/5, b.angle + Math.PI/5);
     ctx.lineTo(bx, by); ctx.fill();
 }
 
