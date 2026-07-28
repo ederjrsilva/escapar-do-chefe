@@ -105,7 +105,7 @@ socket.on('lobbyUpdate', (playersArray) => {
                 card.appendChild(btn);
                 
                 let changeBtn = document.createElement('button'); 
-                changeBtn.innerText = "Trocar Foto";
+                changeBtn.innerText = "Trocar Foto<br>";
                 changeBtn.style.marginLeft = "8px";
                 changeBtn.style.backgroundColor = "#475569";
                 changeBtn.onclick = () => openPhotoModal();
