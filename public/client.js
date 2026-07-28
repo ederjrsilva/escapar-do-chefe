@@ -72,9 +72,6 @@ socket.on('photoList', (photos) => {
 function openPhotoModal() { document.getElementById('photo-modal').style.display = 'block'; }
 
 socket.on('lobbyUpdate', (playersArray) => {
-    // O servidor só emite isso quando está em estado LOBBY. Se o cliente ainda
-    // achava que estava em PLAYING/GAMEOVER (ex: depois de um reinício do
-    // servidor), força a volta pra tela de lobby em vez de ficar preso.
     if(gameState !== 'LOBBY') {
         gameState = 'LOBBY'; syncData = null; staticMap = null;
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -117,12 +114,6 @@ socket.on('gameStart', (mapData) => {
     document.getElementById('hud').classList.remove('hidden');
     resizeCanvas();
     if(!resizeListenerAdded) { window.addEventListener('resize', resizeCanvas); resizeListenerAdded = true; }
-    // Só inicia um novo loop de desenho se não houver um já rodando.
-    // Sem essa checagem, um 'gameStart' que chega enquanto o loop anterior
-    // ainda está de pé (ex: depois de reconectar após o servidor reiniciar)
-    // cria um SEGUNDO loop rodando em paralelo, e cada um desenha sua
-    // própria camada escura por cima da outra — a tela vai ficando cada
-    // vez mais preta a cada "reinício".
     if(!loopRunning) { loopRunning = true; requestAnimationFrame(renderLoop); }
 });
 
@@ -146,9 +137,12 @@ socket.on('syncState', (state) => { syncData = state; updateHUD(); });
 
 function showAlert(msg, color) {
     let alertDiv = document.getElementById('hud-alert');
+    if (!alertDiv) return;
     let textEl = document.getElementById('alert-text');
-    textEl.innerText = msg;
-    textEl.style.color = color || '#ff1744';
+    if (textEl) {
+        textEl.innerText = msg;
+        textEl.style.color = color || '#ff1744';
+    }
     alertDiv.classList.remove('hidden');
     clearTimeout(showAlert._t);
     showAlert._t = setTimeout(() => { alertDiv.classList.add('hidden'); }, 4000);
@@ -168,29 +162,52 @@ socket.on('audioPlay', (snd) => { if(AudioSys[snd]) AudioSys[snd](); });
 socket.on('errorMsg', (msg) => { alert(msg); });
 
 socket.on('gameOver', (data) => {
-    gameState = 'GAMEOVER'; document.getElementById('hud').classList.add('hidden');
-    document.getElementById('game-over').classList.add('active');
-    document.getElementById('end-title').innerText = data.won ? "SUCESSO!" : "FIM DE JOGO";
-    document.getElementById('end-title').style.color = data.won ? "#4caf50" : "#ff5252";
-    document.getElementById('end-msg').innerText = data.msg;
+    gameState = 'GAMEOVER'; 
+    let hud = document.getElementById('hud');
+    if (hud) hud.classList.add('hidden');
+    let gameOverScreen = document.getElementById('game-over');
+    if (gameOverScreen) gameOverScreen.classList.add('active');
+    let endTitle = document.getElementById('end-title');
+    if (endTitle) {
+        endTitle.innerText = data.won ? "SUCESSO!" : "FIM DE JOGO";
+        endTitle.style.color = data.won ? "#4caf50" : "#ff5252";
+    }
+    let endMsg = document.getElementById('end-msg');
+    if (endMsg) endMsg.innerText = data.msg;
 });
 
 function updateHUD() {
-    if(!syncData || !syncData.players[myId]) return;
+    if(!syncData || !syncData.players || !syncData.players[myId]) return;
     let me = syncData.players[myId];
-    document.getElementById('stamina-fill').style.width = `${me.stamina}%`; document.getElementById('noise-fill').style.width = `${me.noise}%`;
-    let min = String(Math.floor(syncData.time / 60)).padStart(2, '0'); let sec = String(syncData.time % 60).padStart(2, '0');
-    document.getElementById('hud-time').innerText = `Tempo: ${min}:${sec}`;
+    
+    let staminaFill = document.getElementById('stamina-fill');
+    if (staminaFill) staminaFill.style.width = `${me.stamina || 0}%`; 
+    
+    let noiseFill = document.getElementById('noise-fill');
+    if (noiseFill) noiseFill.style.width = `${me.noise || 0}%`;
+    
+    let timeVal = syncData.time || 0;
+    let min = String(Math.floor(timeVal / 60)).padStart(2, '0'); 
+    let sec = String(timeVal % 60).padStart(2, '0');
+    let hudTime = document.getElementById('hud-time');
+    if (hudTime) hudTime.innerText = `Tempo: ${min}:${sec}`;
+    
     let objText = document.getElementById('objective-text');
     let gm = syncData.gameManager;
-    if(gm.objectivesCollected < gm.totalObjectives) {
-        objText.innerText = `Colete os itens: ${gm.objectivesCollected}/${gm.totalObjectives}`;
-        objText.style.color = "#facc15";
-    } else {
-        objText.innerText = "CORRAM PARA A SAÍDA!";
-        objText.style.color = "#4caf50";
+    
+    // Evita erro se o gameManager não estiver pronto
+    if (gm && objText) {
+        if(gm.objectivesCollected < gm.totalObjectives) {
+            objText.innerText = `Colete os itens: ${gm.objectivesCollected}/${gm.totalObjectives}`;
+            objText.style.color = "#facc15";
+        } else {
+            objText.innerText = "CORRAM PARA A SAÍDA!";
+            objText.style.color = "#4caf50";
+        }
     }
-    document.getElementById('alive-count').innerText = Object.values(syncData.players).filter(p => !p.isDead).length;
+    
+    let aliveCount = document.getElementById('alive-count');
+    if (aliveCount) aliveCount.innerText = Object.values(syncData.players).filter(p => !p.isDead).length;
 
     let banner = document.getElementById('spectator-banner');
     if(banner) {
@@ -203,84 +220,115 @@ function renderLoop() {
     if(!syncData) { requestAnimationFrame(renderLoop); return; }
     
     let me = syncData.players[myId];
+    let targetX = 0, targetY = 0;
+
     if(me && !me.isDead) {
-        camera.x = (me.x + me.w/2) - canvas.width/2;
-        camera.y = (me.y + me.h/2) - canvas.height/2;
+        targetX = me.x + (me.w || 28)/2;
+        targetY = me.y + (me.h || 28)/2;
     } else {
-        // Espectador: segue outro jogador vivo, ou o chefe se não sobrar ninguém
         let alive = Object.values(syncData.players).find(p => !p.isDead);
-        let follow = alive || syncData.boss;
-        camera.x = (follow.x + follow.w/2) - canvas.width/2;
-        camera.y = (follow.y + follow.h/2) - canvas.height/2;
+        let fallback = { x: staticMap ? staticMap.w/2 : 0, y: staticMap ? staticMap.h/2 : 0, w: 28, h: 28 };
+        let follow = alive || syncData.boss || me || fallback;
+        
+        targetX = (follow.x || 0) + (follow.w || 28)/2;
+        targetY = (follow.y || 0) + (follow.h || 28)/2;
     }
     
-    camera.x = Math.max(0, Math.min(camera.x, staticMap.w - canvas.width));
-    camera.y = Math.max(0, Math.min(camera.y, staticMap.h - canvas.height));
+    camera.x = targetX - canvas.width/2;
+    camera.y = targetY - canvas.height/2;
+
+    if (staticMap) {
+        camera.x = Math.max(0, Math.min(camera.x, staticMap.w - canvas.width));
+        camera.y = Math.max(0, Math.min(camera.y, staticMap.h - canvas.height));
+    }
+    
+    // Prevenção extra para não corromper o canvas com valores inválidos (NaN)
+    if (isNaN(camera.x)) camera.x = 0;
+    if (isNaN(camera.y)) camera.y = 0;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save(); ctx.translate(-camera.x, -camera.y);
 
-    drawMap();
+    if (staticMap) drawMap();
 
-    if(syncData.gameManager.activeItem) {
+    if(syncData.gameManager && syncData.gameManager.activeItem) {
         let itm = syncData.gameManager.activeItem;
-        ctx.fillStyle = itm.color; ctx.beginPath(); ctx.arc(itm.x + itm.w/2, itm.y + itm.h/2, itm.w/2, 0, Math.PI*2); ctx.fill();
+        let itmW = itm.w || 20; let itmH = itm.h || 20;
+        ctx.fillStyle = itm.color || '#fff'; 
+        ctx.beginPath(); ctx.arc((itm.x || 0) + itmW/2, (itm.y || 0) + itmH/2, itmW/2, 0, Math.PI*2); ctx.fill();
         ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
     }
 
-    let entities = [ ...Object.values(syncData.players).filter(p => !p.isDead), syncData.boss ].sort((a,b) => a.y - b.y);
+    // Garante que só adicionaremos dados válidos para não quebrar a ordenação das entidades
+    let entities = Object.values(syncData.players).filter(p => !p.isDead);
+    if (syncData.boss) entities.push(syncData.boss);
+    entities.sort((a,b) => (a.y || 0) - (b.y || 0));
+    
     entities.forEach(e => { if(e.hasOwnProperty('stamina')) drawStickmanPlayer(e); else drawBossMan(e); });
 
     ctx.restore(); 
     
     let viewer = (me && !me.isDead) ? me : Object.values(syncData.players).find(p => !p.isDead);
-    drawLighting(me, viewer); // Sistema de sombras avançado com recortes perfeitos
+    drawLighting(me, viewer);
     
-    if(me && !me.isDead) {
-        let distToBoss = Math.hypot(syncData.boss.x - me.x, syncData.boss.y - me.y);
+    if(me && !me.isDead && syncData.boss) {
+        let distToBoss = Math.hypot((syncData.boss.x || 0) - (me.x || 0), (syncData.boss.y || 0) - (me.y || 0));
         if(distToBoss < 400) {
             let heartbeatInterval = Math.max(300, distToBoss * 1.5);
             if(Date.now() - lastHeartbeat > heartbeatInterval) {
                 AudioSys.heartbeat(); lastHeartbeat = Date.now();
-                ctx.fillStyle = `rgba(239, 68, 68, ${0.4 - (distToBoss/1000)})`; ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = `rgba(239, 68, 68, ${Math.max(0, 0.4 - (distToBoss/1000))})`; 
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
             }
         }
     }
-    drawMinimap();
+    
+    if (staticMap) drawMinimap();
+    
     requestAnimationFrame(renderLoop);
 }
 
 function drawMap() {
+    if (!staticMap) return;
     ctx.fillStyle = '#cbd5e1'; ctx.fillRect(0, 0, staticMap.w, staticMap.h);
-    staticMap.zones.forEach(z => {
-        ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(z.x, z.y, z.w, z.h);
-        ctx.fillStyle = '#94a3b8'; ctx.font = 'bold 32px Roboto'; ctx.textAlign = 'center';
-        ctx.fillText(z.name, z.x + z.w/2, z.y + z.h/2); ctx.textAlign = 'left';
-    });
-    staticMap.hidingSpots.forEach(s => { ctx.fillStyle = '#64748b'; ctx.fillRect(s.x, s.y, s.w, s.h); });
-    let exitLocked = syncData.gameManager.objectivesCollected < syncData.gameManager.totalObjectives;
-    ctx.fillStyle = exitLocked ? '#dc2626' : '#22c55e'; ctx.fillRect(staticMap.exit.x, staticMap.exit.y, staticMap.exit.w, staticMap.exit.h);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Roboto'; ctx.fillText("SAÍDA", staticMap.exit.x + 25, staticMap.exit.y - 5);
-    staticMap.walls.forEach(w => { ctx.fillStyle = '#0f172a'; ctx.fillRect(w.x, w.y, w.w, w.h); });
+    if (staticMap.zones) {
+        staticMap.zones.forEach(z => {
+            ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(z.x, z.y, z.w, z.h);
+            ctx.fillStyle = '#94a3b8'; ctx.font = 'bold 32px Roboto'; ctx.textAlign = 'center';
+            ctx.fillText(z.name || '', z.x + z.w/2, z.y + z.h/2); ctx.textAlign = 'left';
+        });
+    }
+    if (staticMap.hidingSpots) {
+        staticMap.hidingSpots.forEach(s => { ctx.fillStyle = '#64748b'; ctx.fillRect(s.x, s.y, s.w, s.h); });
+    }
+    
+    let exitLocked = syncData.gameManager ? (syncData.gameManager.objectivesCollected < syncData.gameManager.totalObjectives) : true;
+    if (staticMap.exit) {
+        ctx.fillStyle = exitLocked ? '#dc2626' : '#22c55e'; ctx.fillRect(staticMap.exit.x, staticMap.exit.y, staticMap.exit.w, staticMap.exit.h);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Roboto'; ctx.fillText("SAÍDA", staticMap.exit.x + 25, staticMap.exit.y - 5);
+    }
+    if (staticMap.walls) {
+        staticMap.walls.forEach(w => { ctx.fillStyle = '#0f172a'; ctx.fillRect(w.x, w.y, w.w, w.h); });
+    }
 }
 
 function drawStickmanPlayer(p) {
     if(p.isHidden) return;
-    let cx = p.x + p.w/2; let cy = p.y + p.h; 
+    let cx = (p.x || 0) + (p.w || 28)/2; let cy = (p.y || 0) + (p.h || 28); 
+    if (isNaN(cx) || isNaN(cy)) return;
     
     if(!animStates[p.id]) animStates[p.id] = { cycle: 0 };
-    if(p.isMoving) animStates[p.id].cycle += p.inputs.run ? 0.4 : 0.2;
+    if(p.isMoving) animStates[p.id].cycle += (p.inputs && p.inputs.run) ? 0.4 : 0.2;
     else animStates[p.id].cycle = 0;
     
     let legSwing = Math.sin(animStates[p.id].cycle) * 12;
 
     ctx.save();
-    // Ao agachar (Sneak) o personagem fica transparente em vez de ficar cinza escuro invisível
-    if (p.inputs.sneak) ctx.globalAlpha = 0.4; 
+    if (p.inputs && p.inputs.sneak) ctx.globalAlpha = 0.4; 
 
     ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(cx, cy, 14, 6, 0, 0, Math.PI*2); ctx.fill();
 
-    ctx.strokeStyle = p.color; // SEMPRE usa a cor neon radiante do player
+    ctx.strokeStyle = p.color || '#fff'; 
     ctx.lineWidth = 6; ctx.lineCap = 'round';
 
     ctx.beginPath(); ctx.moveTo(cx, cy - 15); ctx.lineTo(cx - 5 + legSwing, cy); ctx.stroke();
@@ -296,7 +344,6 @@ function drawStickmanPlayer(p) {
         ctx.save();
         ctx.beginPath(); ctx.arc(cx, headY, 14, 0, Math.PI*2); ctx.clip();
         
-        // CORREÇÃO DA FOTO: Aplica um object-fit cover perfeito recortando o centro da foto
         let size = Math.min(img.naturalWidth, img.naturalHeight);
         let sx = (img.naturalWidth - size) / 2;
         let sy = (img.naturalHeight - size) / 2;
@@ -304,10 +351,10 @@ function drawStickmanPlayer(p) {
         
         ctx.restore();
         
-        ctx.strokeStyle = p.color; ctx.lineWidth = 2;
+        ctx.strokeStyle = p.color || '#fff'; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(cx, headY, 14, 0, Math.PI*2); ctx.stroke();
     } else {
-        ctx.fillStyle = p.color;
+        ctx.fillStyle = p.color || '#fff';
         ctx.beginPath(); ctx.arc(cx, headY, 12, 0, Math.PI*2); ctx.fill();
     }
     ctx.restore(); 
@@ -319,7 +366,9 @@ function drawStickmanPlayer(p) {
 }
 
 function drawBossMan(b) {
-    let cx = b.x + b.w/2; let cy = b.y + b.h; 
+    if (!b) return;
+    let cx = (b.x || 0) + (b.w || 32)/2; let cy = (b.y || 0) + (b.h || 32); 
+    if (isNaN(cx) || isNaN(cy)) return;
     
     if(!animStates['boss']) animStates['boss'] = { cycle: 0 };
     if(b.isMoving) animStates['boss'].cycle += b.state === 'CHASE' ? 0.5 : 0.2;
@@ -329,7 +378,6 @@ function drawBossMan(b) {
 
     ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.ellipse(cx, cy, 16, 7, 0, 0, Math.PI*2); ctx.fill();
 
-    // Roupa (Corpo) - Clareada para Azul Acinzentado (#475569) em vez de quase preto para ficar bem visível
     ctx.strokeStyle = '#475569'; ctx.lineWidth = 8; ctx.lineCap = 'round';
     
     ctx.beginPath(); ctx.moveTo(cx, cy - 15); ctx.lineTo(cx - 5 + legSwing, cy); ctx.stroke(); 
@@ -345,11 +393,11 @@ function drawBossMan(b) {
     ctx.beginPath(); ctx.arc(cx - 11, headY, 5, 0, Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.arc(cx + 11, headY, 5, 0, Math.PI*2); ctx.fill();
     
-    ctx.fillStyle = '#ff0000'; // Olhos
+    ctx.fillStyle = '#ff0000'; 
     ctx.fillRect(cx - 7, headY - 3, 4, 3);
     ctx.fillRect(cx + 3, headY - 3, 4, 3);
     
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 2; // Sobrancelha
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 2; 
     ctx.beginPath(); ctx.moveTo(cx - 9, headY - 6); ctx.lineTo(cx - 3, headY - 4); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(cx + 9, headY - 6); ctx.lineTo(cx + 3, headY - 4); ctx.stroke();
 
@@ -365,7 +413,6 @@ function drawBossMan(b) {
         ctx.fill();
         ctx.strokeStyle = '#ff1744'; ctx.lineWidth = 2; ctx.stroke();
 
-        // Rabicho do balão apontando pro chefe
         ctx.beginPath();
         ctx.moveTo(cx - 8, by2 + bubbleH);
         ctx.lineTo(cx + 8, by2 + bubbleH);
@@ -380,12 +427,8 @@ function drawBossMan(b) {
 }
 
 function drawLighting(me, viewer) {
-    let isBlackout = syncData.gameManager.globalEvent === 'BLACKOUT';
+    let isBlackout = syncData.gameManager && syncData.gameManager.globalEvent === 'BLACKOUT';
 
-    // IMPORTANTE: a escuridão e os "furos" de luz são montados numa camada
-    // separada (lightCanvas), NÃO diretamente em cima do jogo já desenhado.
-    // Antes, o destination-out apagava pedaços dos próprios personagens
-    // (por isso eles ficavam escuros/invisíveis perto de si mesmos ou do chefe).
     lightCtx.clearRect(0, 0, lightCanvas.width, lightCanvas.height);
     lightCtx.globalCompositeOperation = 'source-over';
     lightCtx.fillStyle = isBlackout ? 'rgba(0, 0, 0, 0.98)' : 'rgba(15, 23, 42, 0.8)';
@@ -393,51 +436,66 @@ function drawLighting(me, viewer) {
 
     lightCtx.globalCompositeOperation = 'destination-out';
 
-    // Fura a escuridão em cima de quem a câmera está seguindo (você, ou o
-    // jogador vivo que você está assistindo se já foi pego)
     if(viewer) {
-        let cx = viewer.x - camera.x + viewer.w/2; let cy = viewer.y - camera.y + viewer.h/2;
-        let grad = lightCtx.createRadialGradient(cx, cy, 0, cx, cy, isBlackout ? 150 : 350);
-        grad.addColorStop(0, 'rgba(255,255,255,1)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
-        lightCtx.fillStyle = grad; lightCtx.beginPath(); lightCtx.arc(cx, cy, isBlackout ? 150 : 350, 0, Math.PI*2); lightCtx.fill();
+        let cx = (viewer.x || 0) - camera.x + (viewer.w || 28)/2; 
+        let cy = (viewer.y || 0) - camera.y + (viewer.h || 28)/2;
+        if (!isNaN(cx) && !isNaN(cy)) {
+            let grad = lightCtx.createRadialGradient(cx, cy, 0, cx, cy, isBlackout ? 150 : 350);
+            grad.addColorStop(0, 'rgba(255,255,255,1)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
+            lightCtx.fillStyle = grad; lightCtx.beginPath(); lightCtx.arc(cx, cy, isBlackout ? 150 : 350, 0, Math.PI*2); lightCtx.fill();
+        }
     }
 
-    // Fura a escuridão em volta do Boss
     let b = syncData.boss;
-    let bx = b.x - camera.x + b.w/2; let by = b.y - camera.y + b.h/2;
-    let bGrad = lightCtx.createRadialGradient(bx, by, 0, bx, by, 150);
-    bGrad.addColorStop(0, 'rgba(255,255,255,0.9)'); bGrad.addColorStop(1, 'rgba(255,255,255,0)');
-    lightCtx.fillStyle = bGrad; lightCtx.beginPath(); lightCtx.arc(bx, by, 150, 0, Math.PI*2); lightCtx.fill();
+    if (b) {
+        let bx = (b.x || 0) - camera.x + (b.w || 32)/2; 
+        let by = (b.y || 0) - camera.y + (b.h || 32)/2;
+        
+        if (!isNaN(bx) && !isNaN(by)) {
+            let bGrad = lightCtx.createRadialGradient(bx, by, 0, bx, by, 150);
+            bGrad.addColorStop(0, 'rgba(255,255,255,0.9)'); bGrad.addColorStop(1, 'rgba(255,255,255,0)');
+            lightCtx.fillStyle = bGrad; lightCtx.beginPath(); lightCtx.arc(bx, by, 150, 0, Math.PI*2); lightCtx.fill();
 
-    // A Lanterna do Boss corta a escuridão permitindo ver o mapa e personagens debaixo
-    let coneLength = isBlackout ? 250 : 500;
-    let coneGrad = lightCtx.createRadialGradient(bx, by, 20, bx, by, coneLength);
-    coneGrad.addColorStop(0, 'rgba(255,255,255,0.9)'); coneGrad.addColorStop(1, 'rgba(255,255,255,0)');
+            let coneLength = isBlackout ? 250 : 500;
+            let coneGrad = lightCtx.createRadialGradient(bx, by, 20, bx, by, coneLength);
+            coneGrad.addColorStop(0, 'rgba(255,255,255,0.9)'); coneGrad.addColorStop(1, 'rgba(255,255,255,0)');
 
-    lightCtx.fillStyle = coneGrad;
-    lightCtx.beginPath(); lightCtx.moveTo(bx, by);
-    lightCtx.arc(bx, by, coneLength, b.angle - Math.PI/5, b.angle + Math.PI/5);
-    lightCtx.lineTo(bx, by); lightCtx.fill();
+            lightCtx.fillStyle = coneGrad;
+            lightCtx.beginPath(); lightCtx.moveTo(bx, by);
+            lightCtx.arc(bx, by, coneLength, (b.angle || 0) - Math.PI/5, (b.angle || 0) + Math.PI/5);
+            lightCtx.lineTo(bx, by); lightCtx.fill();
+        }
+    }
 
     lightCtx.globalCompositeOperation = 'source-over';
-
-    // Cola a camada de escuridão (já com os furos) por cima do jogo, sem apagar os sprites
     ctx.drawImage(lightCanvas, 0, 0);
 
-    // Desenha uma lente colorida volumétrica bem leve por cima da lanterna do boss (Amarela ou Vermelha)
-    ctx.fillStyle = b.state === 'CHASE' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)';
-    ctx.beginPath(); ctx.moveTo(bx, by);
-    ctx.arc(bx, by, coneLength, b.angle - Math.PI/5, b.angle + Math.PI/5);
-    ctx.lineTo(bx, by); ctx.fill();
+    if (b) {
+        let bx = (b.x || 0) - camera.x + (b.w || 32)/2; 
+        let by = (b.y || 0) - camera.y + (b.h || 32)/2;
+        if (!isNaN(bx) && !isNaN(by)) {
+            let coneLength = isBlackout ? 250 : 500;
+            ctx.fillStyle = b.state === 'CHASE' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)';
+            ctx.beginPath(); ctx.moveTo(bx, by);
+            ctx.arc(bx, by, coneLength, (b.angle || 0) - Math.PI/5, (b.angle || 0) + Math.PI/5);
+            ctx.lineTo(bx, by); ctx.fill();
+        }
+    }
 }
 
 function drawMinimap() {
+    if (!staticMap) return;
     mmCtx.clearRect(0, 0, 150, 150);
     let scaleX = 150 / staticMap.w; let scaleY = 150 / staticMap.h;
     mmCtx.fillStyle = '#94a3b8';
-    staticMap.walls.forEach(w => mmCtx.fillRect(w.x * scaleX, w.y * scaleY, w.w * scaleX, w.h * scaleY));
+    
+    if (staticMap.walls) {
+        staticMap.walls.forEach(w => mmCtx.fillRect(w.x * scaleX, w.y * scaleY, w.w * scaleX, w.h * scaleY));
+    }
+    
     let me = syncData.players[myId];
     if(me && !me.isDead && !me.isHidden) {
-        mmCtx.fillStyle = '#38bdf8'; mmCtx.beginPath(); mmCtx.arc(me.x * scaleX, me.y * scaleY, 3, 0, Math.PI*2); mmCtx.fill();
+        mmCtx.fillStyle = '#38bdf8'; mmCtx.beginPath(); 
+        mmCtx.arc((me.x || 0) * scaleX, (me.y || 0) * scaleY, 3, 0, Math.PI*2); mmCtx.fill();
     }
 }
