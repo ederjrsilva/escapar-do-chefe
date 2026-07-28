@@ -59,26 +59,35 @@ socket.on('connect', () => { myId = socket.id; });
 socket.on('photoList', (photos) => {
     availablePhotos = photos;
     let listDiv = document.getElementById('photo-list');
-    listDiv.innerHTML = '';
-    photos.forEach(foto => {
-        if(!imageCache[foto]) { let img = new Image(); img.src = `/fotos/${foto}`; imageCache[foto] = img; }
-        let imgEl = document.createElement('img');
-        imgEl.src = `/fotos/${foto}`; imgEl.className = 'photo-option';
-        imgEl.onclick = () => { socket.emit('updateAvatar', foto); document.getElementById('photo-modal').style.display = 'none'; };
-        listDiv.appendChild(imgEl);
-    });
+    if(listDiv) {
+        listDiv.innerHTML = '';
+        photos.forEach(foto => {
+            if(!imageCache[foto]) { let img = new Image(); img.src = `/fotos/${foto}`; imageCache[foto] = img; }
+            let imgEl = document.createElement('img');
+            imgEl.src = `/fotos/${foto}`; imgEl.className = 'photo-option';
+            imgEl.onclick = () => { socket.emit('updateAvatar', foto); document.getElementById('photo-modal').style.display = 'none'; };
+            listDiv.appendChild(imgEl);
+        });
+    }
 });
 
-function openPhotoModal() { document.getElementById('photo-modal').style.display = 'block'; }
+function openPhotoModal() { 
+    let modal = document.getElementById('photo-modal');
+    if (modal) modal.style.display = 'block'; 
+}
 
 socket.on('lobbyUpdate', (playersArray) => {
     if(gameState !== 'LOBBY') {
         gameState = 'LOBBY'; syncData = null; staticMap = null;
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-        document.getElementById('lobby').classList.add('active');
-        document.getElementById('hud').classList.add('hidden');
+        let lobbyEl = document.getElementById('lobby');
+        if (lobbyEl) lobbyEl.classList.add('active');
+        let hudEl = document.getElementById('hud');
+        if (hudEl) hudEl.classList.add('hidden');
     }
-    const grid = document.getElementById('lobby-grid'); grid.innerHTML = '';
+    const grid = document.getElementById('lobby-grid'); 
+    if (grid) grid.innerHTML = '';
+    
     playersArray.forEach(p => {
         let isMe = p.id === myId;
         let card = document.createElement('div');
@@ -88,11 +97,19 @@ socket.on('lobbyUpdate', (playersArray) => {
                                     `<div class="avatar-img" style="background:${p.color}; display:flex; align-items:center; justify-content:center; cursor:${isMe?'pointer':'default'};" onclick="${isMe ? 'openPhotoModal()' : ''}">${isMe?'📸':''}</div>`;
         
         card.innerHTML = `<h3>${p.name}</h3>${avatarHTML}<p>${p.ready ? 'Pronto ✓' : 'Aguardando...'}</p>`;
+        
         if(isMe && !p.ready) {
             if(p.avatar) {
                 let btn = document.createElement('button'); btn.innerText = "Estou Pronto!";
                 btn.onclick = () => { AudioSys.ctx.resume(); socket.emit('setReady', true); };
                 card.appendChild(btn);
+                
+                let changeBtn = document.createElement('button'); 
+                changeBtn.innerText = "Trocar Foto";
+                changeBtn.style.marginLeft = "8px";
+                changeBtn.style.backgroundColor = "#475569";
+                changeBtn.onclick = () => openPhotoModal();
+                card.appendChild(changeBtn);
             } else {
                 let hint = document.createElement('p');
                 hint.innerText = "Escolha uma foto para continuar 📸";
@@ -103,15 +120,28 @@ socket.on('lobbyUpdate', (playersArray) => {
                 card.appendChild(btn);
             }
         }
-        grid.appendChild(card);
+        if (grid) grid.appendChild(card);
     });
-    document.getElementById('btn-start').innerText = (playersArray.length > 0 && playersArray.every(p => p.ready)) ? "Iniciando..." : "Aguardando todos ficarem Prontos...";
+    
+    let btnStart = document.getElementById('btn-start');
+    if (btnStart) {
+        btnStart.innerText = (playersArray.length > 0 && playersArray.every(p => p.ready)) ? "Iniciando..." : "Aguardando todos ficarem Prontos...";
+    }
 });
 
 socket.on('gameStart', (mapData) => {
-    gameState = 'PLAYING'; staticMap = mapData;
+    gameState = 'PLAYING'; 
+    staticMap = mapData; 
+    syncData = null; // Limpa os dados fantasmas da partida anterior
+    
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById('hud').classList.remove('hidden');
+    let hud = document.getElementById('hud');
+    if (hud) hud.classList.remove('hidden');
+    
+    // Limpa os canvas completamente para evitar sobreposição da tela preta antiga
+    lightCtx.clearRect(0, 0, lightCanvas.width, lightCanvas.height);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
     resizeCanvas();
     if(!resizeListenerAdded) { window.addEventListener('resize', resizeCanvas); resizeListenerAdded = true; }
     if(!loopRunning) { loopRunning = true; requestAnimationFrame(renderLoop); }
@@ -120,8 +150,14 @@ socket.on('gameStart', (mapData) => {
 socket.on('resetToLobby', () => {
     gameState = 'LOBBY'; syncData = null; staticMap = null;
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById('lobby').classList.add('active');
-    document.getElementById('hud').classList.add('hidden');
+    let lobbyEl = document.getElementById('lobby');
+    if (lobbyEl) lobbyEl.classList.add('active');
+    let hudEl = document.getElementById('hud');
+    if (hudEl) hudEl.classList.add('hidden');
+    
+    // Força o servidor a reconhecer que não estamos prontos, 
+    // o que também obriga o servidor a reenviar o 'lobbyUpdate' destravando a tela.
+    socket.emit('setReady', false);
 });
 
 const lightCanvas = document.createElement('canvas');
@@ -195,7 +231,6 @@ function updateHUD() {
     let objText = document.getElementById('objective-text');
     let gm = syncData.gameManager;
     
-    // Evita erro se o gameManager não estiver pronto
     if (gm && objText) {
         if(gm.objectivesCollected < gm.totalObjectives) {
             objText.innerText = `Colete os itens: ${gm.objectivesCollected}/${gm.totalObjectives}`;
@@ -219,20 +254,18 @@ function renderLoop() {
     if(gameState !== 'PLAYING') { loopRunning = false; return; }
     if(!syncData) { requestAnimationFrame(renderLoop); return; }
     
-    let me = syncData.players[myId];
+    let me = syncData.players ? syncData.players[myId] : null;
     let targetX = 0, targetY = 0;
 
-    if(me && !me.isDead) {
-        targetX = me.x + (me.w || 28)/2;
-        targetY = me.y + (me.h || 28)/2;
-    } else {
-        let alive = Object.values(syncData.players).find(p => !p.isDead);
-        let fallback = { x: staticMap ? staticMap.w/2 : 0, y: staticMap ? staticMap.h/2 : 0, w: 28, h: 28 };
-        let follow = alive || syncData.boss || me || fallback;
-        
-        targetX = (follow.x || 0) + (follow.w || 28)/2;
-        targetY = (follow.y || 0) + (follow.h || 28)/2;
-    }
+    // Define qual entidade a câmera irá focar
+    let alive = Object.values(syncData.players || {}).find(p => !p.isDead);
+    let fallback = { x: staticMap ? staticMap.w/2 : 0, y: staticMap ? staticMap.h/2 : 0, w: 28, h: 28 };
+    let follow = alive || syncData.boss || me || fallback;
+    
+    if(me && !me.isDead) follow = me;
+    
+    targetX = (follow.x || 0) + (follow.w || 28)/2;
+    targetY = (follow.y || 0) + (follow.h || 28)/2;
     
     camera.x = targetX - canvas.width/2;
     camera.y = targetY - canvas.height/2;
@@ -242,7 +275,6 @@ function renderLoop() {
         camera.y = Math.max(0, Math.min(camera.y, staticMap.h - canvas.height));
     }
     
-    // Prevenção extra para não corromper o canvas com valores inválidos (NaN)
     if (isNaN(camera.x)) camera.x = 0;
     if (isNaN(camera.y)) camera.y = 0;
 
@@ -259,8 +291,7 @@ function renderLoop() {
         ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
     }
 
-    // Garante que só adicionaremos dados válidos para não quebrar a ordenação das entidades
-    let entities = Object.values(syncData.players).filter(p => !p.isDead);
+    let entities = Object.values(syncData.players || {}).filter(p => !p.isDead);
     if (syncData.boss) entities.push(syncData.boss);
     entities.sort((a,b) => (a.y || 0) - (b.y || 0));
     
@@ -268,8 +299,9 @@ function renderLoop() {
 
     ctx.restore(); 
     
-    let viewer = (me && !me.isDead) ? me : Object.values(syncData.players).find(p => !p.isDead);
-    drawLighting(me, viewer);
+    // Viewer e Follow são enviados para garantir que sempre haja um ponto de luz, mesmo em modo espectador
+    let viewer = (me && !me.isDead) ? me : alive;
+    drawLighting(viewer, follow);
     
     if(me && !me.isDead && syncData.boss) {
         let distToBoss = Math.hypot((syncData.boss.x || 0) - (me.x || 0), (syncData.boss.y || 0) - (me.y || 0));
@@ -426,7 +458,7 @@ function drawBossMan(b) {
     }
 }
 
-function drawLighting(me, viewer) {
+function drawLighting(viewer, follow) {
     let isBlackout = syncData.gameManager && syncData.gameManager.globalEvent === 'BLACKOUT';
 
     lightCtx.clearRect(0, 0, lightCanvas.width, lightCanvas.height);
@@ -436,9 +468,11 @@ function drawLighting(me, viewer) {
 
     lightCtx.globalCompositeOperation = 'destination-out';
 
-    if(viewer) {
-        let cx = (viewer.x || 0) - camera.x + (viewer.w || 28)/2; 
-        let cy = (viewer.y || 0) - camera.y + (viewer.h || 28)/2;
+    // Garante que a câmera tenha luz, mesmo quando somos espectadores seguindo outro player ou o mapa central
+    let focusEntity = viewer || follow;
+    if(focusEntity) {
+        let cx = (focusEntity.x || 0) - camera.x + (focusEntity.w || 28)/2; 
+        let cy = (focusEntity.y || 0) - camera.y + (focusEntity.h || 28)/2;
         if (!isNaN(cx) && !isNaN(cy)) {
             let grad = lightCtx.createRadialGradient(cx, cy, 0, cx, cy, isBlackout ? 150 : 350);
             grad.addColorStop(0, 'rgba(255,255,255,1)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
