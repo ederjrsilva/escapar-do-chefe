@@ -106,8 +106,9 @@ socket.on('lobbyUpdate', (playersArray) => {
                 
                 let changeBtn = document.createElement('button'); 
                 changeBtn.innerText = "Trocar Foto";
-                changeBtn.style.marginLeft = "8px";
-                changeBtn.style.backgroundColor = "#475569";
+                // Força o espaçamento vertical e a cor de fundo independente do CSS externo
+                changeBtn.style.setProperty('margin-top', '12px', 'important');
+                changeBtn.style.setProperty('background-color', '#475569', 'important');
                 changeBtn.onclick = () => openPhotoModal();
                 card.appendChild(changeBtn);
             } else {
@@ -132,13 +133,12 @@ socket.on('lobbyUpdate', (playersArray) => {
 socket.on('gameStart', (mapData) => {
     gameState = 'PLAYING'; 
     staticMap = mapData; 
-    syncData = null; // Limpa os dados fantasmas da partida anterior
+    syncData = null;
     
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     let hud = document.getElementById('hud');
     if (hud) hud.classList.remove('hidden');
     
-    // Limpa os canvas completamente para evitar sobreposição da tela preta antiga
     lightCtx.clearRect(0, 0, lightCanvas.width, lightCanvas.height);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
@@ -155,8 +155,6 @@ socket.on('resetToLobby', () => {
     let hudEl = document.getElementById('hud');
     if (hudEl) hudEl.classList.add('hidden');
     
-    // Força o servidor a reconhecer que não estamos prontos, 
-    // o que também obriga o servidor a reenviar o 'lobbyUpdate' destravando a tela.
     socket.emit('setReady', false);
 });
 
@@ -257,7 +255,6 @@ function renderLoop() {
     let me = syncData.players ? syncData.players[myId] : null;
     let targetX = 0, targetY = 0;
 
-    // Define qual entidade a câmera irá focar
     let alive = Object.values(syncData.players || {}).find(p => !p.isDead);
     let fallback = { x: staticMap ? staticMap.w/2 : 0, y: staticMap ? staticMap.h/2 : 0, w: 28, h: 28 };
     let follow = alive || syncData.boss || me || fallback;
@@ -299,7 +296,6 @@ function renderLoop() {
 
     ctx.restore(); 
     
-    // Viewer e Follow são enviados para garantir que sempre haja um ponto de luz, mesmo em modo espectador
     let viewer = (me && !me.isDead) ? me : alive;
     drawLighting(viewer, follow);
     
@@ -468,7 +464,6 @@ function drawLighting(viewer, follow) {
 
     lightCtx.globalCompositeOperation = 'destination-out';
 
-    // Garante que a câmera tenha luz, mesmo quando somos espectadores seguindo outro player ou o mapa central
     let focusEntity = viewer || follow;
     if(focusEntity) {
         let cx = (focusEntity.x || 0) - camera.x + (focusEntity.w || 28)/2; 
