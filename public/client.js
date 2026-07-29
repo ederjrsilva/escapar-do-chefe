@@ -381,7 +381,7 @@ function drawBossMan(b) {
     ctx.beginPath(); ctx.moveTo(cx, cy - 32); ctx.lineTo(cx + 15, cy - 25 + legSwing); ctx.stroke();
 
     // Gravata
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = '#000080';
     ctx.beginPath(); ctx.moveTo(cx - 3, cy - 34); ctx.lineTo(cx + 3, cy - 34); ctx.lineTo(cx + 2, cy - 18); ctx.lineTo(cx, cy - 14); ctx.lineTo(cx - 2, cy - 18); ctx.closePath(); ctx.fill();
 
     let headY = cy - 45;
