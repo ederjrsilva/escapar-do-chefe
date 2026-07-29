@@ -261,11 +261,42 @@ function drawMap() {
         ctx.fillStyle = '#94a3b8'; ctx.font = 'bold 32px Roboto'; ctx.textAlign = 'center';
         ctx.fillText(z.name, z.x + z.w/2, z.y + z.h/2); ctx.textAlign = 'left';
     });
-    staticMap.hidingSpots.forEach(s => { ctx.fillStyle = '#64748b'; ctx.fillRect(s.x, s.y, s.w, s.h); });
+    staticMap.hidingSpots.forEach(drawBathroomDoor);
     let exitLocked = syncData.gameManager.objectivesCollected < syncData.gameManager.totalObjectives;
     ctx.fillStyle = exitLocked ? '#dc2626' : '#22c55e'; ctx.fillRect(staticMap.exit.x, staticMap.exit.y, staticMap.exit.w, staticMap.exit.h);
     ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Roboto'; ctx.fillText("SAÍDA", staticMap.exit.x + 25, staticMap.exit.y - 5);
     staticMap.walls.forEach(w => { ctx.fillStyle = '#0f172a'; ctx.fillRect(w.x, w.y, w.w, w.h); });
+}
+
+function drawBathroomDoor(s) {
+    // Moldura da porta
+    ctx.fillStyle = '#4e342e';
+    ctx.fillRect(s.x - 4, s.y - 4, s.w + 8, s.h + 8);
+
+    // Porta
+    ctx.fillStyle = '#a1887f';
+    ctx.fillRect(s.x, s.y, s.w, s.h);
+
+    // Painéis entalhados da porta
+    ctx.strokeStyle = '#6d4c41'; ctx.lineWidth = 2;
+    ctx.strokeRect(s.x + 8, s.y + 6, s.w - 16, s.h * 0.38);
+    ctx.strokeRect(s.x + 8, s.y + s.h * 0.54, s.w - 16, s.h * 0.38);
+
+    // Ícone de banheiro (bonequinho estilizado) no painel de cima
+    ctx.fillStyle = '#3e2723';
+    ctx.beginPath(); ctx.arc(s.x + s.w/2, s.y + s.h * 0.16, 4, 0, Math.PI*2); ctx.fill();
+    ctx.fillRect(s.x + s.w/2 - 5, s.y + s.h * 0.2, 10, 14);
+
+    // Maçaneta
+    ctx.fillStyle = '#ffd54f';
+    ctx.beginPath(); ctx.arc(s.x + s.w - 12, s.y + s.h/2, 4, 0, Math.PI*2); ctx.fill();
+
+    // Placa "BANHEIRO" embaixo da porta
+    ctx.fillStyle = 'rgba(15,23,42,0.85)';
+    ctx.fillRect(s.x - 6, s.y + s.h + 6, s.w + 12, 16);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 10px Roboto'; ctx.textAlign = 'center';
+    ctx.fillText('BANHEIRO', s.x + s.w/2, s.y + s.h + 18);
+    ctx.textAlign = 'left';
 }
 
 function drawStickmanPlayer(p) {
