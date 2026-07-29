@@ -154,13 +154,17 @@ function checkGameStart() {
 }
 
 function checkEndGameCondition() {
+    if(gameState !== 'PLAYING') return; // evita disparar duas vezes no mesmo fim de partida
     let pList = Object.values(players); let aliveAndNotSaved = pList.filter(p => !p.isDead);
     if(pList.length > 0 && aliveAndNotSaved.length === 0) {
         let anyoneSaved = pList.some(p => p.saved);
         gameState = 'GAMEOVER';
         io.emit('gameOver', { won: anyoneSaved, msg: anyoneSaved ? "Fim da partida. Sobreviventes escaparam!" : "O Chefe pegou todos!" });
-        // Espera um pouco antes de voltar todo mundo pro lobby, pra dar tempo de ler a mensagem
-        setTimeout(resetGame, 5000);
+        // Reinicia o servidor pro estado inicial pouco depois — os clientes
+        // também recarregam a própria página nesse meio tempo (ver client.js),
+        // então quando reconectarem já vão encontrar tudo limpo, como se
+        // fosse a primeira partida.
+        setTimeout(resetGame, 4500);
     }
 }
 
