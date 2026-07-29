@@ -46,6 +46,7 @@
         <button id="btn-start" style="margin-top:20px;">Aguardando jogadores...</button>
     </div>
 
+    <!-- Modal para selecionar foto -->
     <div id="photo-modal">
         <h3>Escolha seu rosto</h3>
         <div id="photo-list" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;"></div>
@@ -75,7 +76,8 @@
     
     <div id="game-over" class="screen">
         <h1 id="end-title"></h1><p id="end-msg"></p>
-        <button onclick="location.reload()">Voltar ao Lobby</button>
+        <p style="font-size:13px; color:#94a3b8;">Reiniciando automaticamente em instantes...</p>
+        <button onclick="location.reload()">Voltar ao Lobby agora</button>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
