@@ -259,10 +259,15 @@ function updateHUD() {
     }
 }
 
-function renderLoop() {
+let lastFrameTime = 0;
+const FRAME_INTERVAL = 1000 / 30; // o servidor só manda dados novos 30x/s — desenhar mais rápido que isso é trabalho jogado fora
+
+function renderLoop(timestamp) {
     if(gameState !== 'PLAYING') { loopRunning = false; return; }
     if(!syncData) { requestAnimationFrame(renderLoop); return; }
-    
+    if(timestamp && timestamp - lastFrameTime < FRAME_INTERVAL) { requestAnimationFrame(renderLoop); return; }
+    lastFrameTime = timestamp || performance.now();
+
     let me = syncData.players[myId];
     if(me && !me.isDead) {
         camera.x = (me.x + me.w/2) - canvas.width/2;
@@ -285,8 +290,10 @@ function renderLoop() {
 
     if(syncData.gameManager.activeItem) {
         let itm = syncData.gameManager.activeItem;
-        ctx.fillStyle = itm.color; ctx.beginPath(); ctx.arc(itm.x + itm.w/2, itm.y + itm.h/2, itm.w/2, 0, Math.PI*2); ctx.fill();
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+        if(itm.x + itm.w > camera.x && itm.x < camera.x + canvas.width && itm.y + itm.h > camera.y && itm.y < camera.y + canvas.height) {
+            ctx.fillStyle = itm.color; ctx.beginPath(); ctx.arc(itm.x + itm.w/2, itm.y + itm.h/2, itm.w/2, 0, Math.PI*2); ctx.fill();
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+        }
     }
 
     let entities = [ ...Object.values(syncData.players).filter(p => !p.isDead), syncData.boss, syncData.npc ].sort((a,b) => a.y - b.y);
@@ -316,17 +323,30 @@ function renderLoop() {
 }
 
 function drawMap() {
-    ctx.fillStyle = '#cbd5e1'; ctx.fillRect(0, 0, staticMap.w, staticMap.h);
+    // ANTES: fillRect cobria o mapa INTEIRO (2400x1800) a cada frame, mesmo a
+    // câmera só mostrando uma fatia pequena disso — isso sozinho já era o
+    // maior motivo de travamento, principalmente no mobile. Agora só
+    // pinta/desenha o que realmente aparece na tela.
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillRect(camera.x, camera.y, canvas.width, canvas.height);
+
+    const margin = 60;
+    const inView = (x, y, w, h) => x + w > camera.x - margin && x < camera.x + canvas.width + margin && y + h > camera.y - margin && y < camera.y + canvas.height + margin;
+
     staticMap.zones.forEach(z => {
+        if(!inView(z.x, z.y, z.w, z.h)) return;
         ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(z.x, z.y, z.w, z.h);
         ctx.fillStyle = '#94a3b8'; ctx.font = 'bold 32px Roboto'; ctx.textAlign = 'center';
         ctx.fillText(z.name, z.x + z.w/2, z.y + z.h/2); ctx.textAlign = 'left';
     });
-    staticMap.hidingSpots.forEach(drawBathroomDoor);
+    staticMap.hidingSpots.forEach(s => { if(inView(s.x - 10, s.y, s.w + 20, s.h + 30)) drawBathroomDoor(s); });
+
     let exitLocked = syncData.gameManager.objectivesCollected < syncData.gameManager.totalObjectives;
-    ctx.fillStyle = exitLocked ? '#dc2626' : '#22c55e'; ctx.fillRect(staticMap.exit.x, staticMap.exit.y, staticMap.exit.w, staticMap.exit.h);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Roboto'; ctx.fillText("SAÍDA", staticMap.exit.x + 25, staticMap.exit.y - 5);
-    staticMap.walls.forEach(w => { ctx.fillStyle = '#0f172a'; ctx.fillRect(w.x, w.y, w.w, w.h); });
+    if(inView(staticMap.exit.x, staticMap.exit.y - 20, staticMap.exit.w, staticMap.exit.h + 20)) {
+        ctx.fillStyle = exitLocked ? '#dc2626' : '#22c55e'; ctx.fillRect(staticMap.exit.x, staticMap.exit.y, staticMap.exit.w, staticMap.exit.h);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Roboto'; ctx.fillText("SAÍDA", staticMap.exit.x + 25, staticMap.exit.y - 5);
+    }
+    staticMap.walls.forEach(w => { if(inView(w.x, w.y, w.w, w.h)) { ctx.fillStyle = '#0f172a'; ctx.fillRect(w.x, w.y, w.w, w.h); } });
 }
 
 function drawBathroomDoor(s) {
@@ -570,22 +590,26 @@ function drawLighting(me, viewer) {
         lightCtx.fillStyle = grad; lightCtx.beginPath(); lightCtx.arc(cx, cy, isBlackout ? 150 : 350, 0, Math.PI*2); lightCtx.fill();
     }
 
-    // Fura a escuridão em volta do Boss
+    // Fura a escuridão em volta do Boss (só vale a pena calcular se ele estiver perto da tela)
     let b = syncData.boss;
     let bx = b.x - camera.x + b.w/2; let by = b.y - camera.y + b.h/2;
-    let bGrad = lightCtx.createRadialGradient(bx, by, 0, bx, by, 150);
-    bGrad.addColorStop(0, 'rgba(255,255,255,0.9)'); bGrad.addColorStop(1, 'rgba(255,255,255,0)');
-    lightCtx.fillStyle = bGrad; lightCtx.beginPath(); lightCtx.arc(bx, by, 150, 0, Math.PI*2); lightCtx.fill();
+    let bossNearScreen = bx > -200 && bx < lightCanvas.width + 200 && by > -200 && by < lightCanvas.height + 200;
 
-    // A Lanterna do Boss corta a escuridão permitindo ver o mapa e personagens debaixo
     let coneLength = isBlackout ? 250 : 500;
-    let coneGrad = lightCtx.createRadialGradient(bx, by, 20, bx, by, coneLength);
-    coneGrad.addColorStop(0, 'rgba(255,255,255,0.9)'); coneGrad.addColorStop(1, 'rgba(255,255,255,0)');
+    if(bossNearScreen) {
+        let bGrad = lightCtx.createRadialGradient(bx, by, 0, bx, by, 150);
+        bGrad.addColorStop(0, 'rgba(255,255,255,0.9)'); bGrad.addColorStop(1, 'rgba(255,255,255,0)');
+        lightCtx.fillStyle = bGrad; lightCtx.beginPath(); lightCtx.arc(bx, by, 150, 0, Math.PI*2); lightCtx.fill();
 
-    lightCtx.fillStyle = coneGrad;
-    lightCtx.beginPath(); lightCtx.moveTo(bx, by);
-    lightCtx.arc(bx, by, coneLength, b.angle - Math.PI/5, b.angle + Math.PI/5);
-    lightCtx.lineTo(bx, by); lightCtx.fill();
+        // A Lanterna do Boss corta a escuridão permitindo ver o mapa e personagens debaixo
+        let coneGrad = lightCtx.createRadialGradient(bx, by, 20, bx, by, coneLength);
+        coneGrad.addColorStop(0, 'rgba(255,255,255,0.9)'); coneGrad.addColorStop(1, 'rgba(255,255,255,0)');
+
+        lightCtx.fillStyle = coneGrad;
+        lightCtx.beginPath(); lightCtx.moveTo(bx, by);
+        lightCtx.arc(bx, by, coneLength, b.angle - Math.PI/5, b.angle + Math.PI/5);
+        lightCtx.lineTo(bx, by); lightCtx.fill();
+    }
 
     lightCtx.globalCompositeOperation = 'source-over';
 
@@ -593,10 +617,12 @@ function drawLighting(me, viewer) {
     ctx.drawImage(lightCanvas, 0, 0);
 
     // Desenha uma lente colorida volumétrica bem leve por cima da lanterna do boss (Amarela ou Vermelha)
-    ctx.fillStyle = b.state === 'CHASE' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)';
-    ctx.beginPath(); ctx.moveTo(bx, by);
-    ctx.arc(bx, by, coneLength, b.angle - Math.PI/5, b.angle + Math.PI/5);
-    ctx.lineTo(bx, by); ctx.fill();
+    if(bossNearScreen) {
+        ctx.fillStyle = b.state === 'CHASE' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)';
+        ctx.beginPath(); ctx.moveTo(bx, by);
+        ctx.arc(bx, by, coneLength, b.angle - Math.PI/5, b.angle + Math.PI/5);
+        ctx.lineTo(bx, by); ctx.fill();
+    }
 }
 
 function drawMinimap() {
