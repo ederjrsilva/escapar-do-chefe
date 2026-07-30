@@ -14,6 +14,13 @@ const imageCache = {};
 const animStates = {}; 
 let availablePhotos = [];
 
+// Foto de referência fixa do personagem ambiente (trabalhador). Nome com
+// prefixo "npc-" pra nunca aparecer como opção de avatar no lobby — o
+// servidor já filtra isso em photoList. Caminho mocado apontando pra pasta
+// /fotos, igual às demais fotos; troque o arquivo depois se quiser.
+const npcImg = new Image();
+npcImg.src = '/fotos/npc-trabalhador.jpg';
+
 let camera = { x: 0, y: 0 };
 
 const AudioSys = {
@@ -513,18 +520,29 @@ function drawWorkerNpc(n) {
     ctx.beginPath(); ctx.moveTo(cx - 6, cy - 30); ctx.lineTo(cx + 4, cy - 17); ctx.stroke();
 
     let headY = cy - 42;
-    ctx.fillStyle = '#c68b59';
-    ctx.beginPath(); ctx.arc(cx, headY, 11, 0, Math.PI*2); ctx.fill();
+    if(npcImg.complete && npcImg.naturalWidth > 0) {
+        ctx.save();
+        ctx.beginPath(); ctx.arc(cx, headY, 11, 0, Math.PI*2); ctx.clip();
+        let size = Math.min(npcImg.naturalWidth, npcImg.naturalHeight);
+        let sx = (npcImg.naturalWidth - size) / 2;
+        let sy = (npcImg.naturalHeight - size) / 2;
+        ctx.drawImage(npcImg, sx, sy, size, size, cx - 11, headY - 11, 22, 22);
+        ctx.restore();
+        ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(cx, headY, 11, 0, Math.PI*2); ctx.stroke();
+    } else {
+        // Enquanto a foto não carrega (ou não existe ainda), usa o rosto simples de antes
+        ctx.fillStyle = '#c68b59';
+        ctx.beginPath(); ctx.arc(cx, headY, 11, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(cx - 6, headY - 1, 3, 3);
+        ctx.fillRect(cx + 3, headY - 1, 3, 3);
+    }
 
-    // Boné escuro
+    // Boné escuro (continua igual, por cima do rosto)
     ctx.fillStyle = '#1f2937';
     ctx.beginPath(); ctx.arc(cx, headY - 2, 11, Math.PI, 0); ctx.fill();
     ctx.fillRect(cx - 3, headY - 8, 15, 5);
-
-    // Olhos simples
-    ctx.fillStyle = '#1e293b';
-    ctx.fillRect(cx - 6, headY - 1, 3, 3);
-    ctx.fillRect(cx + 3, headY - 1, 3, 3);
 
     if(n.speechTimer > 0 && n.speechText) drawSpeechBubble(cx, headY - 60, n.speechText, '#f97316');
 }
