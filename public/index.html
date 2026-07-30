@@ -29,6 +29,7 @@
         .hud-box { background: rgba(15, 23, 42, 0.8); border: 2px solid #334155; padding: 15px; border-radius: 8px; pointer-events: auto; }
         #objective-text { color: #facc15; font-weight: bold; font-size: 18px; margin-top: 5px; }
         #minimap-container { width: 150px; height: 150px; background: rgba(0,0,0,0.5); border: 2px solid #475569; position: relative; }
+        #minimapCanvas { width: 100%; height: 100%; display: block; }
         .status-bar-container { display: flex; flex-direction: column; gap: 10px; width: 250px; }
         .bar-wrap { background: #1e293b; height: 20px; border-radius: 10px; overflow: hidden; border: 1px solid #475569; position: relative; }
         .bar-fill { height: 100%; width: 100%; transition: width 0.1s; }
@@ -42,6 +43,12 @@
         /* Controles de toque (mobile) — ficam fixos na parte de baixo da tela,
            semi-transparentes, e só aparecem em telas de toque durante a partida. */
         body.mobile-mode .hud-bottom { margin-bottom: 135px; }
+        body.mobile-mode .hud-top { padding: 8px; }
+        body.mobile-mode .hud-top .hud-box { padding: 6px 10px; }
+        body.mobile-mode #objective-text { font-size: 11px; margin-top: 2px; }
+        body.mobile-mode #hud-time { font-size: 9px !important; }
+        body.mobile-mode .hud-top > .hud-box > div:first-child { font-size: 10px; }
+        body.mobile-mode #minimap-container { width: 70px; height: 70px; }
         #mobile-controls {
             position: fixed; left: 0; right: 0; bottom: 0; height: 175px;
             display: flex; justify-content: space-between; align-items: flex-end;
