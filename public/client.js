@@ -180,13 +180,15 @@ socket.on('gameStart', (mapData) => {
     if(!loopRunning) { loopRunning = true; requestAnimationFrame(renderLoop); }
 });
 
-socket.on('resetToLobby', () => {
+function goToLobbyScreen() {
     gameState = 'LOBBY'; syncData = null; staticMap = null;
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById('lobby').classList.add('active');
     document.getElementById('hud').classList.add('hidden');
     setMobileControlsVisible(false);
-});
+}
+
+socket.on('resetToLobby', goToLobbyScreen);
 
 const lightCanvas = document.createElement('canvas');
 const lightCtx = lightCanvas.getContext('2d');
@@ -230,14 +232,13 @@ socket.on('gameOver', (data) => {
     document.getElementById('end-title').innerText = data.won ? "SUCESSO!" : "FIM DE JOGO";
     document.getElementById('end-title').style.color = data.won ? "#4caf50" : "#ff5252";
     document.getElementById('end-msg').innerText = data.msg;
-    // Depois de mostrar a mensagem, recarrega a página sozinho — isso garante
-    // um reinício 100% limpo (como se fosse a primeira partida), sem depender
-    // de nenhuma sequência de eventos client-side que poderia travar no meio.
-    // Um pequeno atraso aleatório evita que TODOS os jogadores reconectem no
-    // servidor no mesmo milissegundo exato — essa rajada de reconexões
-    // simultâneas era uma das causas da tela travando/erro 503 logo após o
-    // fim da partida.
-    setTimeout(() => location.reload(), 4000 + Math.random() * 1500);
+    // NÃO recarrega mais a página aqui. Um reload força um novo carregamento
+    // HTTP do zero — em hospedagens que "dormem" sem tráfego (como o plano
+    // free do Render), isso podia cair bem no momento em que o servidor
+    // estava acordando de novo, deixando a tela preta por um tempo enquanto
+    // a página carregava. Mantendo a mesma conexão viva (via 'resetToLobby',
+    // que o servidor já manda uns segundos depois), o servidor nunca fica
+    // sem tráfego entre partidas e a volta ao lobby é instantânea.
 });
 
 function updateHUD() {
