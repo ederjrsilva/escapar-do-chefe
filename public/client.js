@@ -535,9 +535,10 @@ function drawWorkerNpc(n) {
     ctx.strokeStyle = '#f97316'; ctx.lineWidth = 10; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(cx, cy - 33); ctx.quadraticCurveTo(cx - 5, cy - 23, cx, cy - 15); ctx.stroke();
 
-    // Faixa refletiva diagonal do colete
-    ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(cx - 6, cy - 30); ctx.lineTo(cx + 4, cy - 17); ctx.stroke();
+    // Duas faixas refletivas horizontais (peito e cintura), como no colete real de referência
+    ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(cx - 6, cy - 27); ctx.lineTo(cx + 6, cy - 27); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - 6, cy - 19); ctx.lineTo(cx + 6, cy - 19); ctx.stroke();
 
     let headY = cy - 42;
     if(npcImg.complete && npcImg.naturalWidth > 0) {
