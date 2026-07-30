@@ -233,7 +233,11 @@ socket.on('gameOver', (data) => {
     // Depois de mostrar a mensagem, recarrega a página sozinho — isso garante
     // um reinício 100% limpo (como se fosse a primeira partida), sem depender
     // de nenhuma sequência de eventos client-side que poderia travar no meio.
-    setTimeout(() => location.reload(), 4000);
+    // Um pequeno atraso aleatório evita que TODOS os jogadores reconectem no
+    // servidor no mesmo milissegundo exato — essa rajada de reconexões
+    // simultâneas era uma das causas da tela travando/erro 503 logo após o
+    // fim da partida.
+    setTimeout(() => location.reload(), 4000 + Math.random() * 1500);
 });
 
 function updateHUD() {
