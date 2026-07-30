@@ -20,10 +20,10 @@ const MAP_W = 2400, MAP_H = 1800;
 const map = {
     w: MAP_W, h: MAP_H,
     zones: [
-        {name: "RECEPÇÃO", x: 100, y: 100, w: 600, h: 400}, {name: "FARMÁCIA", x: 800, y: 100, w: 400, h: 400},
-        {name: "LABORATÓRIO", x: 1300, y: 100, w: 500, h: 600}, {name: "RH & COMPRAS", x: 100, y: 600, w: 500, h: 500},
-        {name: "RADIOLOGIA", x: 700, y: 600, w: 500, h: 500}, {name: "REFEITÓRIO", x: 100, y: 1200, w: 800, h: 500},
-        {name: "ALMOXARIFADO", x: 1000, y: 1200, w: 800, h: 500},
+        {name: "CONTRATOS", x: 100, y: 100, w: 600, h: 400}, {name: "FARMÁCIA", x: 800, y: 100, w: 400, h: 400},
+        {name: "FINANCEIRO", x: 1300, y: 100, w: 500, h: 600}, {name: "RH & COMPRAS", x: 100, y: 600, w: 500, h: 500},
+        {name: "COMPRAS", x: 700, y: 600, w: 500, h: 500}, {name: "REFEITÓRIO", x: 100, y: 1200, w: 800, h: 500},
+        {name: "ESTACIONAMENTO", x: 1000, y: 1200, w: 800, h: 500},
     ],
     walls: [
         {x: 0, y: 0, w: MAP_W, h: 20}, {x: 0, y: MAP_H-20, w: MAP_W, h: 20},
