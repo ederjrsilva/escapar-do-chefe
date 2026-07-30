@@ -291,8 +291,16 @@ function renderLoop(timestamp) {
     if(syncData.gameManager.activeItem) {
         let itm = syncData.gameManager.activeItem;
         if(itm.x + itm.w > camera.x && itm.x < camera.x + canvas.width && itm.y + itm.h > camera.y && itm.y < camera.y + canvas.height) {
-            ctx.fillStyle = itm.color; ctx.beginPath(); ctx.arc(itm.x + itm.w/2, itm.y + itm.h/2, itm.w/2, 0, Math.PI*2); ctx.fill();
-            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+            let icx = itm.x + itm.w/2; let icy = itm.y + itm.h/2;
+            // Pequeno "pulso" pra chamar atenção do item no chão
+            let pulse = 1 + Math.sin(Date.now() / 200) * 0.08;
+            ctx.save();
+            ctx.shadowColor = 'rgba(250, 204, 21, 0.8)'; ctx.shadowBlur = 10;
+            ctx.font = `${Math.round(itm.w * pulse)}px sans-serif`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText('💉', icx, icy);
+            ctx.restore();
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         }
     }
 
