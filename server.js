@@ -44,6 +44,7 @@ const BOSS_PATROL_PHRASES = [
     "Cadê a Letícia?", "Cadê a Marilyn?", "Cadê o Rickson?",
     "Cadê a Keila?", "Cadê a Aline?", "Cadê o Léo?"
 ];
+const NPC_PHRASES = ["Nem eu nem tu", "Pode vir, meu patrão", "Me dá um real"];
 const TOTAL_OBJECTIVES = 20;
 
 let gameManager = { level: 1, globalEvent: 'NONE', eventTimer: 0, objectivesCollected: 0, totalObjectives: TOTAL_OBJECTIVES, activeItem: null, speakCooldown: 300 };
@@ -51,7 +52,14 @@ let gameManager = { level: 1, globalEvent: 'NONE', eventTimer: 0, objectivesColl
 let boss = {
     x: MAP_W/2, y: MAP_H/2, w: 32, h: 32, state: 'PATROL', angle: 0, targetId: null, lastKnownPos: null,
     waypoints: [ {x: 400, y: 300}, {x: 1000, y: 300}, {x: 1500, y: 400}, {x: 350, y: 850}, {x: 950, y: 850}, {x: 500, y: 1450}, {x: 1400, y: 1450} ],
-    wpIndex: 0, prevX: 0, prevY: 0, stuckTimer: 0, isMoving: false, speechText: null, speechTimer: 0
+    wpIndex: 0, prevX: 0, prevY: 0, stuckTimer: 0, isMoving: false, speechText: null, speechTimer: 0, role: 'boss'
+};
+
+// Personagem ambiente: só fica andando de um lado pro outro, sem interagir com ninguém.
+let npc = {
+    x: 1400, y: 1450, w: 30, h: 30, angle: 0, isMoving: false, prevX: 0, prevY: 0, stuckTimer: 0,
+    waypoints: [ {x: 1400, y: 1450}, {x: 500, y: 1450}, {x: 950, y: 850}, {x: 350, y: 850}, {x: 1500, y: 400}, {x: 1000, y: 300}, {x: 400, y: 300} ],
+    wpIndex: 0, speechText: null, speechTimer: 0, speakCooldown: 150, role: 'npc'
 };
 
 // Faz o chefe "falar": mostra um balão de fala (via speechText/speechTimer, sincronizado
@@ -60,6 +68,12 @@ function bossSay(text, ttlFrames = 90) {
     boss.speechText = text;
     boss.speechTimer = ttlFrames;
     io.emit('bossSpeak', text);
+}
+
+function npcSay(text, ttlFrames = 90) {
+    npc.speechText = text;
+    npc.speechTimer = ttlFrames;
+    io.emit('npcSpeak', text);
 }
 
 function rectIntersect(r1, r2) { return !(r2.x > r1.x + r1.w || r2.x + r2.w < r1.x || r2.y > r1.y + r1.h || r2.y + r2.h < r1.y); }
@@ -147,6 +161,7 @@ function checkGameStart() {
     if(pList.length > 0 && pList.every(p => p.ready && p.avatar)) {
         gameState = 'PLAYING'; startTime = Date.now();
         gameManager.level = 1; gameManager.objectivesCollected = 0; gameManager.speakCooldown = 300;
+        npc.x = 1400; npc.y = 1450; npc.wpIndex = 0; npc.speechText = null; npc.speechTimer = 0; npc.speakCooldown = 150;
         spawnNextObjective();
         io.emit('bossAlert', `Colete os ${gameManager.totalObjectives} itens espalhados e fuja do chefe!`);
         io.emit('gameStart', map);
@@ -170,7 +185,8 @@ function checkEndGameCondition() {
 
 function resetGame() {
     gameState = 'LOBBY';
-    boss = { x: MAP_W/2, y: MAP_H/2, w: 32, h: 32, state: 'PATROL', angle: 0, targetId: null, lastKnownPos: null, wpIndex: 0, prevX: 0, prevY: 0, stuckTimer: 0, isMoving: false, speechText: null, speechTimer: 0 };
+    boss = { x: MAP_W/2, y: MAP_H/2, w: 32, h: 32, state: 'PATROL', angle: 0, targetId: null, lastKnownPos: null, wpIndex: 0, prevX: 0, prevY: 0, stuckTimer: 0, isMoving: false, speechText: null, speechTimer: 0, role: 'boss' };
+    npc.x = 1400; npc.y = 1450; npc.wpIndex = 0; npc.speechText = null; npc.speechTimer = 0; npc.speakCooldown = 150; npc.isMoving = false;
     gameManager.level = 1; gameManager.globalEvent = 'NONE'; gameManager.eventTimer = 0;
     gameManager.objectivesCollected = 0; gameManager.activeItem = null; gameManager.speakCooldown = 300;
     // Reseta o "pronto" de todo mundo também — sem isso, o lobby ficava travado
@@ -292,6 +308,39 @@ setInterval(() => {
     
     boss.prevX = boss.x; boss.prevY = boss.y;
 
+    // Personagem ambiente: anda de waypoint em waypoint, sem perseguir nem se importar com ninguém
+    let npcSpeed = 2.5;
+    let npcWp = npc.waypoints[npc.wpIndex];
+    let npcDx = npcWp.x - npc.x; let npcDy = npcWp.y - npc.y;
+    if(dist(npc.x, npc.y, npcWp.x, npcWp.y) > 2) npc.angle = Math.atan2(npcDy, npcDx);
+    let npcNextX = npc.x + Math.cos(npc.angle) * npcSpeed;
+    let npcNextY = npc.y + Math.sin(npc.angle) * npcSpeed;
+    let npcHitX = false, npcHitY = false;
+    map.walls.forEach(w => {
+        if(rectIntersect({x: npcNextX, y: npc.y, w: npc.w, h: npc.h}, w)) npcHitX = true;
+        if(rectIntersect({x: npc.x, y: npcNextY, w: npc.w, h: npc.h}, w)) npcHitY = true;
+    });
+    if(!npcHitX) npc.x = npcNextX; if(!npcHitY) npc.y = npcNextY;
+    npc.isMoving = (Math.abs(npc.x - npc.prevX) > 0.5 || Math.abs(npc.y - npc.prevY) > 0.5);
+    if(dist(npc.x, npc.y, npcWp.x, npcWp.y) < 20) npc.wpIndex = (npc.wpIndex + 1) % npc.waypoints.length;
+
+    if (!npc.isMoving) {
+        npc.stuckTimer++;
+        if (npc.stuckTimer > 15) {
+            npc.wpIndex = (npc.wpIndex + 1) % npc.waypoints.length;
+            npc.stuckTimer = 0;
+        }
+    } else { npc.stuckTimer = 0; }
+    npc.prevX = npc.x; npc.prevY = npc.y;
+
+    // Ele fala uma frase aleatória a cada 5 segundos (150 ticks a 30fps)
+    npc.speakCooldown--;
+    if(npc.speakCooldown <= 0) {
+        npcSay(NPC_PHRASES[Math.floor(Math.random() * NPC_PHRASES.length)]);
+        npc.speakCooldown = 150;
+    }
+    if(npc.speechTimer > 0) npc.speechTimer--;
+
     let closestDist = Infinity; let closestP = null;
     let sightRadius = gameManager.globalEvent === 'BLACKOUT' ? 250 : 500;
 
@@ -331,7 +380,7 @@ setInterval(() => {
         }
     });
 
-    io.emit('syncState', { players: players, boss: boss, gameManager: gameManager, mapExit: map.exit, time: Math.floor((Date.now() - startTime) / 1000) });
+    io.emit('syncState', { players: players, boss: boss, npc: npc, gameManager: gameManager, mapExit: map.exit, time: Math.floor((Date.now() - startTime) / 1000) });
 
 }, 1000 / 30);
 
