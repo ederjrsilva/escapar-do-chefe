@@ -45,6 +45,7 @@ const BOSS_PATROL_PHRASES = [
     "Cadê a Keila?", "Cadê a Aline?", "Cadê o Léo?"
 ];
 const NPC_PHRASES = ["Nem eu nem tu", "Pode vir, meu patrão", "Me dá um real"];
+const NPC_HOLD_PHRASES = ["Eu aceito Pix", "Me paga aí que eu solto", "Não vou te soltar", "Rapaz, eu tava doente", "Nem eu nem tu"];
 const TOTAL_OBJECTIVES = 20;
 
 let gameManager = { level: 1, globalEvent: 'NONE', eventTimer: 0, objectivesCollected: 0, totalObjectives: TOTAL_OBJECTIVES, activeItem: null, speakCooldown: 300 };
@@ -55,11 +56,13 @@ let boss = {
     wpIndex: 0, prevX: 0, prevY: 0, stuckTimer: 0, isMoving: false, speechText: null, speechTimer: 0, role: 'boss'
 };
 
-// Personagem ambiente: só fica andando de um lado pro outro, sem interagir com ninguém.
+// Personagem ambiente: fica andando de um lado pro outro. Se encostar em algum
+// jogador, segura ele parado por 2 segundos (só um por vez) antes de soltar.
 let npc = {
     x: 1400, y: 1450, w: 30, h: 30, angle: 0, isMoving: false, prevX: 0, prevY: 0, stuckTimer: 0,
     waypoints: [ {x: 1400, y: 1450}, {x: 500, y: 1450}, {x: 950, y: 850}, {x: 350, y: 850}, {x: 1500, y: 400}, {x: 1000, y: 300}, {x: 400, y: 300} ],
-    wpIndex: 0, speechText: null, speechTimer: 0, speakCooldown: 150, role: 'npc'
+    wpIndex: 0, speechText: null, speechTimer: 0, speakCooldown: 150, role: 'npc',
+    holdingId: null, holdTimer: 0, grabCooldown: 0
 };
 
 // Faz o chefe "falar": mostra um balão de fala (via speechText/speechTimer, sincronizado
@@ -98,7 +101,7 @@ io.on('connection', (socket) => {
     players[socket.id] = {
         id: socket.id, ready: false, name: `Jogador ${nextPlayerNumber}`, color: colors[(nextPlayerNumber-1) % colors.length], avatar: null,
         x: 200 + (Object.keys(players).length * 50), y: 200, w: 30, h: 30,
-        stamina: 100, noise: 0, isHidden: false, isDead: false, isMoving: false,
+        stamina: 100, noise: 0, isHidden: false, isDead: false, isMoving: false, heldByNpc: false,
         inputs: { up: false, down: false, left: false, right: false, run: false, sneak: false }
     };
     nextPlayerNumber++;
@@ -123,7 +126,7 @@ io.on('connection', (socket) => {
     socket.on('input', (inputs) => { if(players[socket.id] && gameState === 'PLAYING' && !players[socket.id].isDead) players[socket.id].inputs = inputs; });
 
     socket.on('action', (actionType) => {
-        let p = players[socket.id]; if(!p || p.isDead || gameState !== 'PLAYING') return;
+        let p = players[socket.id]; if(!p || p.isDead || p.heldByNpc || gameState !== 'PLAYING') return;
         if(actionType === 'HIDE') {
             let nearHiding = map.hidingSpots.find(s => rectIntersect(p, {x: s.x-20, y: s.y-20, w: s.w+40, h: s.h+40}));
             if(nearHiding && !p.isHidden) { p.isHidden = true; p.x = nearHiding.x + 15; p.y = nearHiding.y + 15; } 
@@ -163,7 +166,7 @@ function checkGameStart() {
     if(pList.length > 0 && pList.every(p => p.ready && p.avatar)) {
         gameState = 'PLAYING'; startTime = Date.now();
         gameManager.level = 1; gameManager.objectivesCollected = 0; gameManager.speakCooldown = 300;
-        npc.x = 1400; npc.y = 1450; npc.wpIndex = 0; npc.speechText = null; npc.speechTimer = 0; npc.speakCooldown = 150;
+        npc.x = 1400; npc.y = 1450; npc.wpIndex = 0; npc.speechText = null; npc.speechTimer = 0; npc.speakCooldown = 150; npc.holdingId = null; npc.holdTimer = 0; npc.grabCooldown = 0;
         spawnNextObjective();
         io.emit('bossAlert', `Colete os ${gameManager.totalObjectives} itens espalhados e fuja do chefe!`);
         io.emit('gameStart', map);
@@ -188,13 +191,13 @@ function checkEndGameCondition() {
 function resetGame() {
     gameState = 'LOBBY';
     boss = { x: MAP_W/2, y: MAP_H/2, w: 32, h: 32, state: 'PATROL', angle: 0, targetId: null, lastKnownPos: null, wpIndex: 0, prevX: 0, prevY: 0, stuckTimer: 0, isMoving: false, speechText: null, speechTimer: 0, role: 'boss' };
-    npc.x = 1400; npc.y = 1450; npc.wpIndex = 0; npc.speechText = null; npc.speechTimer = 0; npc.speakCooldown = 150; npc.isMoving = false;
+    npc.x = 1400; npc.y = 1450; npc.wpIndex = 0; npc.speechText = null; npc.speechTimer = 0; npc.speakCooldown = 150; npc.isMoving = false; npc.holdingId = null; npc.holdTimer = 0; npc.grabCooldown = 0;
     gameManager.level = 1; gameManager.globalEvent = 'NONE'; gameManager.eventTimer = 0;
     gameManager.objectivesCollected = 0; gameManager.activeItem = null; gameManager.speakCooldown = 300;
     // Reseta o "pronto" de todo mundo também — sem isso, o lobby ficava travado
     // em "Iniciando..." pra sempre depois de uma partida, pois todo mundo
     // continuava marcado como pronto sem ninguém apertar o botão de novo.
-    Object.values(players).forEach(p => { p.isDead = false; p.saved = false; p.isHidden = false; p.ready = false; });
+    Object.values(players).forEach(p => { p.isDead = false; p.saved = false; p.isHidden = false; p.ready = false; p.heldByNpc = false; });
     io.emit('resetToLobby');
     io.emit('lobbyUpdate', Object.values(players));
 }
@@ -233,6 +236,7 @@ setInterval(() => {
     pList.forEach(p => {
         if(p.isDead) return;
         if(p.isHidden) { p.stamina = Math.min(p.stamina + 0.5, 100); p.noise = 0; p.isMoving = false; return; }
+        if(p.heldByNpc) { p.isMoving = false; p.noise = 0; return; }
         
         let dx = 0; let dy = 0; let speed = p.inputs.sneak ? 2 : 4.5;
         p.noise = p.inputs.sneak ? 5 : 20;
@@ -310,36 +314,70 @@ setInterval(() => {
     
     boss.prevX = boss.x; boss.prevY = boss.y;
 
-    // Personagem ambiente: anda de waypoint em waypoint, sem perseguir nem se importar com ninguém
-    let npcSpeed = 2.5;
-    let npcWp = npc.waypoints[npc.wpIndex];
-    let npcDx = npcWp.x - npc.x; let npcDy = npcWp.y - npc.y;
-    if(dist(npc.x, npc.y, npcWp.x, npcWp.y) > 2) npc.angle = Math.atan2(npcDy, npcDx);
-    let npcNextX = npc.x + Math.cos(npc.angle) * npcSpeed;
-    let npcNextY = npc.y + Math.sin(npc.angle) * npcSpeed;
-    let npcHitX = false, npcHitY = false;
-    map.walls.forEach(w => {
-        if(rectIntersect({x: npcNextX, y: npc.y, w: npc.w, h: npc.h}, w)) npcHitX = true;
-        if(rectIntersect({x: npc.x, y: npcNextY, w: npc.w, h: npc.h}, w)) npcHitY = true;
-    });
-    if(!npcHitX) npc.x = npcNextX; if(!npcHitY) npc.y = npcNextY;
-    npc.isMoving = (Math.abs(npc.x - npc.prevX) > 0.5 || Math.abs(npc.y - npc.prevY) > 0.5);
-    if(dist(npc.x, npc.y, npcWp.x, npcWp.y) < 20) npc.wpIndex = (npc.wpIndex + 1) % npc.waypoints.length;
-
-    if (!npc.isMoving) {
-        npc.stuckTimer++;
-        if (npc.stuckTimer > 15) {
-            npc.wpIndex = (npc.wpIndex + 1) % npc.waypoints.length;
-            npc.stuckTimer = 0;
+    // Personagem ambiente: anda de waypoint em waypoint. Se estiver segurando
+    // alguém, fica parado no lugar até soltar.
+    if(npc.holdingId) {
+        npc.isMoving = false;
+        npc.holdTimer--;
+        let held = players[npc.holdingId];
+        if(!held || held.isDead || npc.holdTimer <= 0) {
+            // Solta o jogador (ou libera se ele morreu/saiu no meio do aperto)
+            if(held) held.heldByNpc = false;
+            npc.holdingId = null;
+            npc.grabCooldown = 60; // ~2s de intervalo antes de poder segurar outra vez
         }
-    } else { npc.stuckTimer = 0; }
+    } else {
+        let npcSpeed = 2.5;
+        let npcWp = npc.waypoints[npc.wpIndex];
+        let npcDx = npcWp.x - npc.x; let npcDy = npcWp.y - npc.y;
+        if(dist(npc.x, npc.y, npcWp.x, npcWp.y) > 2) npc.angle = Math.atan2(npcDy, npcDx);
+        let npcNextX = npc.x + Math.cos(npc.angle) * npcSpeed;
+        let npcNextY = npc.y + Math.sin(npc.angle) * npcSpeed;
+        let npcHitX = false, npcHitY = false;
+        map.walls.forEach(w => {
+            if(rectIntersect({x: npcNextX, y: npc.y, w: npc.w, h: npc.h}, w)) npcHitX = true;
+            if(rectIntersect({x: npc.x, y: npcNextY, w: npc.w, h: npc.h}, w)) npcHitY = true;
+        });
+        if(!npcHitX) npc.x = npcNextX; if(!npcHitY) npc.y = npcNextY;
+        npc.isMoving = (Math.abs(npc.x - npc.prevX) > 0.5 || Math.abs(npc.y - npc.prevY) > 0.5);
+        if(dist(npc.x, npc.y, npcWp.x, npcWp.y) < 20) npc.wpIndex = (npc.wpIndex + 1) % npc.waypoints.length;
+
+        if (!npc.isMoving) {
+            npc.stuckTimer++;
+            if (npc.stuckTimer > 15) {
+                npc.wpIndex = (npc.wpIndex + 1) % npc.waypoints.length;
+                npc.stuckTimer = 0;
+            }
+        } else { npc.stuckTimer = 0; }
+
+        if(npc.grabCooldown > 0) npc.grabCooldown--;
+        else {
+            // Se chegar bem perto de algum jogador, segura ele (só um por vez)
+            let target = pList.find(p => !p.isDead && !p.isHidden && !p.heldByNpc && rectIntersect(p, npc));
+            if(target) {
+                npc.holdingId = target.id;
+                npc.holdTimer = 60; // 2 segundos a 30fps
+                target.heldByNpc = true;
+                npcSay(NPC_HOLD_PHRASES[Math.floor(Math.random() * NPC_HOLD_PHRASES.length)]);
+            }
+        }
+    }
     npc.prevX = npc.x; npc.prevY = npc.y;
 
-    // Ele fala uma frase aleatória a cada 5 segundos (150 ticks a 30fps)
-    npc.speakCooldown--;
-    if(npc.speakCooldown <= 0) {
-        npcSay(NPC_PHRASES[Math.floor(Math.random() * NPC_PHRASES.length)]);
-        npc.speakCooldown = 150;
+    // Fala aleatória: enquanto segura alguém, usa as frases do aperto (mais
+    // frequentes); andando solto, usa as frases de ambiente de sempre.
+    if(npc.holdingId) {
+        npc.speakCooldown--;
+        if(npc.speakCooldown <= 0) {
+            npcSay(NPC_HOLD_PHRASES[Math.floor(Math.random() * NPC_HOLD_PHRASES.length)]);
+            npc.speakCooldown = 25; // ~0.8s — várias falas ao longo dos 2s do aperto
+        }
+    } else {
+        npc.speakCooldown--;
+        if(npc.speakCooldown <= 0) {
+            npcSay(NPC_PHRASES[Math.floor(Math.random() * NPC_PHRASES.length)]);
+            npc.speakCooldown = 150;
+        }
     }
     if(npc.speechTimer > 0) npc.speechTimer--;
 
