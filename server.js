@@ -8,6 +8,17 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// Rede de segurança: se algo inesperado der errado em qualquer lugar, loga o
+// erro mas NÃO derruba o processo. Antes, qualquer exceção não tratada matava
+// o servidor inteiro, e todo mundo via tela preta / erro 503 até alguém (ou
+// o gerenciador do processo) reiniciar na mão.
+process.on('uncaughtException', (err) => {
+    console.error('[uncaughtException] erro inesperado, servidor continua rodando:', err);
+});
+process.on('unhandledRejection', (err) => {
+    console.error('[unhandledRejection] promise sem tratamento, servidor continua rodando:', err);
+});
+
 app.use(express.static('public'));
 app.use('/fotos', express.static(path.join(__dirname, 'fotos')));
 
@@ -20,10 +31,10 @@ const MAP_W = 2400, MAP_H = 1800;
 const map = {
     w: MAP_W, h: MAP_H,
     zones: [
-        {name: "CONTRATOS", x: 100, y: 100, w: 600, h: 400}, {name: "FARMÁCIA", x: 800, y: 100, w: 400, h: 400},
-        {name: "FINANCEIRO", x: 1300, y: 100, w: 500, h: 600}, {name: "RH & COMPRAS", x: 100, y: 600, w: 500, h: 500},
-        {name: "COMPRAS", x: 700, y: 600, w: 500, h: 500}, {name: "REFEITÓRIO", x: 100, y: 1200, w: 800, h: 500},
-        {name: "ESTACIONAMENTO", x: 1000, y: 1200, w: 800, h: 500},
+        {name: "RECEPÇÃO", x: 100, y: 100, w: 600, h: 400}, {name: "FARMÁCIA", x: 800, y: 100, w: 400, h: 400},
+        {name: "LABORATÓRIO", x: 1300, y: 100, w: 500, h: 600}, {name: "RH & COMPRAS", x: 100, y: 600, w: 500, h: 500},
+        {name: "RADIOLOGIA", x: 700, y: 600, w: 500, h: 500}, {name: "REFEITÓRIO", x: 100, y: 1200, w: 800, h: 500},
+        {name: "ALMOXARIFADO", x: 1000, y: 1200, w: 800, h: 500},
     ],
     walls: [
         {x: 0, y: 0, w: MAP_W, h: 20}, {x: 0, y: MAP_H-20, w: MAP_W, h: 20},
@@ -168,7 +179,7 @@ function checkGameStart() {
         gameManager.level = 1; gameManager.objectivesCollected = 0; gameManager.speakCooldown = 300;
         npc.x = 1400; npc.y = 1450; npc.wpIndex = 0; npc.speechText = null; npc.speechTimer = 0; npc.speakCooldown = 150; npc.holdingId = null; npc.holdTimer = 0; npc.grabCooldown = 0;
         spawnNextObjective();
-        io.emit('bossAlert', `Pegue as ${gameManager.totalObjectives} seringas e fuja do chefe!`);
+        io.emit('bossAlert', `Colete os ${gameManager.totalObjectives} itens espalhados e fuja do chefe!`);
         io.emit('gameStart', map);
     }
 }
@@ -203,6 +214,7 @@ function resetGame() {
 }
 
 setInterval(() => {
+    try {
     if(gameState !== 'PLAYING') return;
 
     if(Math.random() < 0.002 && gameManager.globalEvent === 'NONE') { 
@@ -422,6 +434,9 @@ setInterval(() => {
 
     io.emit('syncState', { players: players, boss: boss, npc: npc, gameManager: gameManager, mapExit: map.exit, time: Math.floor((Date.now() - startTime) / 1000) });
 
+    } catch (err) {
+        console.error('[game loop] erro num tick, esse frame foi ignorado mas o servidor continua rodando:', err);
+    }
 }, 1000 / 30);
 
 server.listen(3000, () => console.log(`Servidor rodando na porta 3000`));
