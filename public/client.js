@@ -559,11 +559,6 @@ function drawWorkerNpc(n) {
         ctx.fillRect(cx + 3, headY - 1, 3, 3);
     }
 
-    // Boné escuro (continua igual, por cima do rosto)
-    ctx.fillStyle = '#1f2937';
-    ctx.beginPath(); ctx.arc(cx, headY - 2, 11, Math.PI, 0); ctx.fill();
-    ctx.fillRect(cx - 3, headY - 8, 15, 5);
-
     if(n.speechTimer > 0 && n.speechText) drawSpeechBubble(cx, headY - 60, n.speechText, '#f97316');
 }
 
