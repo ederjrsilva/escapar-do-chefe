@@ -168,7 +168,7 @@ function checkGameStart() {
         gameManager.level = 1; gameManager.objectivesCollected = 0; gameManager.speakCooldown = 300;
         npc.x = 1400; npc.y = 1450; npc.wpIndex = 0; npc.speechText = null; npc.speechTimer = 0; npc.speakCooldown = 150; npc.holdingId = null; npc.holdTimer = 0; npc.grabCooldown = 0;
         spawnNextObjective();
-        io.emit('bossAlert', `Colete os ${gameManager.totalObjectives} itens espalhados e fuja do chefe!`);
+        io.emit('bossAlert', `Pegue as ${gameManager.totalObjectives} seringas e fuja do chefe!`);
         io.emit('gameStart', map);
     }
 }
