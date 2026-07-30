@@ -29,6 +29,7 @@ const AudioSys = {
     },
     bossSpot() { this.playTone(150, 'sawtooth', 0.8, 0.3); },
     bossSpeak() { this.playTone(220, 'square', 0.12, 0.15); setTimeout(() => this.playTone(180, 'square', 0.15, 0.15), 120); },
+    npcSpeak() { this.playTone(500, 'triangle', 0.1, 0.12); setTimeout(() => this.playTone(600, 'triangle', 0.12, 0.12), 100); },
     item() { this.playTone(900, 'sine', 0.2, 0.1); this.playTone(1200, 'sine', 0.3, 0.1); },
     heartbeat() { this.playTone(60, 'sine', 0.1, 0.4); setTimeout(() => this.playTone(60, 'sine', 0.2, 0.4), 200); }
 };
@@ -55,6 +56,51 @@ window.addEventListener('keyup', (e) => {
 });
 
 socket.on('connect', () => { myId = socket.id; });
+
+// --- Controles de toque (mobile) ---
+// Reaproveita o mesmo objeto `keys` e os mesmos eventos ('input'/'action')
+// que o teclado já usa, então o servidor não precisa saber a diferença.
+const isMobile = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+
+function bindHoldButton(el, onStart, onEnd) {
+    el.addEventListener('touchstart', (e) => { e.preventDefault(); onStart(); }, { passive: false });
+    el.addEventListener('touchend', (e) => { e.preventDefault(); onEnd(); }, { passive: false });
+    el.addEventListener('touchcancel', (e) => { e.preventDefault(); onEnd(); }, { passive: false });
+}
+
+function setupMobileControls() {
+    if(!isMobile) return;
+
+    const dirMap = { 'btn-up': 'up', 'btn-down': 'down', 'btn-left': 'left', 'btn-right': 'right' };
+    Object.keys(dirMap).forEach(id => {
+        let el = document.getElementById(id); let dir = dirMap[id];
+        bindHoldButton(el,
+            () => { keys[dir] = true; el.classList.add('active-btn'); if(gameState === 'PLAYING') socket.emit('input', keys); },
+            () => { keys[dir] = false; el.classList.remove('active-btn'); if(gameState === 'PLAYING') socket.emit('input', keys); }
+        );
+    });
+
+    let runBtn = document.getElementById('btn-run');
+    bindHoldButton(runBtn,
+        () => { keys.run = true; runBtn.classList.add('active-btn'); if(gameState === 'PLAYING') socket.emit('input', keys); },
+        () => { keys.run = false; runBtn.classList.remove('active-btn'); if(gameState === 'PLAYING') socket.emit('input', keys); }
+    );
+
+    document.getElementById('btn-hide').addEventListener('touchstart', (e) => {
+        e.preventDefault(); AudioSys.ctx.resume(); if(gameState === 'PLAYING') socket.emit('action', 'HIDE');
+    }, { passive: false });
+
+    document.getElementById('btn-interact').addEventListener('touchstart', (e) => {
+        e.preventDefault(); AudioSys.ctx.resume(); if(gameState === 'PLAYING') socket.emit('action', 'INTERACT');
+    }, { passive: false });
+}
+setupMobileControls();
+
+function setMobileControlsVisible(visible) {
+    if(!isMobile) return;
+    document.getElementById('mobile-controls').classList.toggle('hidden', !visible);
+    document.body.classList.toggle('mobile-mode', visible);
+}
 
 socket.on('photoList', (photos) => {
     availablePhotos = photos;
@@ -115,6 +161,7 @@ socket.on('gameStart', (mapData) => {
     gameState = 'PLAYING'; staticMap = mapData;
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById('hud').classList.remove('hidden');
+    setMobileControlsVisible(true);
     resizeCanvas();
     if(!resizeListenerAdded) { window.addEventListener('resize', resizeCanvas); resizeListenerAdded = true; }
     // Só inicia um novo loop de desenho se não houver um já rodando.
@@ -131,6 +178,7 @@ socket.on('resetToLobby', () => {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById('lobby').classList.add('active');
     document.getElementById('hud').classList.add('hidden');
+    setMobileControlsVisible(false);
 });
 
 const lightCanvas = document.createElement('canvas');
@@ -162,6 +210,7 @@ socket.on('playerCaught', (data) => {
 });
 
 socket.on('bossSpeak', () => { AudioSys.bossSpeak(); });
+socket.on('npcSpeak', () => { AudioSys.npcSpeak(); });
 
 socket.on('audioPlay', (snd) => { if(AudioSys[snd]) AudioSys[snd](); });
 
@@ -169,6 +218,7 @@ socket.on('errorMsg', (msg) => { alert(msg); });
 
 socket.on('gameOver', (data) => {
     gameState = 'GAMEOVER'; document.getElementById('hud').classList.add('hidden');
+    setMobileControlsVisible(false);
     document.getElementById('game-over').classList.add('active');
     document.getElementById('end-title').innerText = data.won ? "SUCESSO!" : "FIM DE JOGO";
     document.getElementById('end-title').style.color = data.won ? "#4caf50" : "#ff5252";
@@ -232,8 +282,12 @@ function renderLoop() {
         ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
     }
 
-    let entities = [ ...Object.values(syncData.players).filter(p => !p.isDead), syncData.boss ].sort((a,b) => a.y - b.y);
-    entities.forEach(e => { if(e.hasOwnProperty('stamina')) drawStickmanPlayer(e); else drawBossMan(e); });
+    let entities = [ ...Object.values(syncData.players).filter(p => !p.isDead), syncData.boss, syncData.npc ].sort((a,b) => a.y - b.y);
+    entities.forEach(e => {
+        if(e.hasOwnProperty('stamina')) drawStickmanPlayer(e);
+        else if(e.role === 'npc') drawWorkerNpc(e);
+        else drawBossMan(e);
+    });
 
     ctx.restore(); 
     
@@ -381,7 +435,7 @@ function drawBossMan(b) {
     ctx.beginPath(); ctx.moveTo(cx, cy - 32); ctx.lineTo(cx + 15, cy - 25 + legSwing); ctx.stroke();
 
     // Gravata
-    ctx.fillStyle = '#D3D3D3';
+    ctx.fillStyle = '#7f1d1d';
     ctx.beginPath(); ctx.moveTo(cx - 3, cy - 34); ctx.lineTo(cx + 3, cy - 34); ctx.lineTo(cx + 2, cy - 18); ctx.lineTo(cx, cy - 14); ctx.lineTo(cx - 2, cy - 18); ctx.closePath(); ctx.fill();
 
     let headY = cy - 45;
@@ -399,30 +453,80 @@ function drawBossMan(b) {
     ctx.beginPath(); ctx.moveTo(cx - 9, headY - 6); ctx.lineTo(cx - 3, headY - 4); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(cx + 9, headY - 6); ctx.lineTo(cx + 3, headY - 4); ctx.stroke();
 
-    if(b.speechTimer > 0 && b.speechText) {
-        ctx.font = 'bold 15px Roboto';
-        let textW = ctx.measureText(b.speechText).width;
-        let bubbleW = textW + 24; let bubbleH = 32;
-        let bx2 = cx - bubbleW/2; let by2 = headY - 70;
+    if(b.speechTimer > 0 && b.speechText) drawSpeechBubble(cx, headY - 70, b.speechText, '#ff1744');
+}
 
-        ctx.fillStyle = 'rgba(255,255,255,0.95)';
-        ctx.beginPath();
-        ctx.roundRect ? ctx.roundRect(bx2, by2, bubbleW, bubbleH, 8) : ctx.rect(bx2, by2, bubbleW, bubbleH);
-        ctx.fill();
-        ctx.strokeStyle = '#ff1744'; ctx.lineWidth = 2; ctx.stroke();
+function drawSpeechBubble(cx, by2, text, borderColor) {
+    ctx.font = 'bold 15px Roboto';
+    let textW = ctx.measureText(text).width;
+    let bubbleW = textW + 24; let bubbleH = 32;
+    let bx2 = cx - bubbleW/2;
 
-        // Rabicho do balão apontando pro chefe
-        ctx.beginPath();
-        ctx.moveTo(cx - 8, by2 + bubbleH);
-        ctx.lineTo(cx + 8, by2 + bubbleH);
-        ctx.lineTo(cx, by2 + bubbleH + 10);
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(bx2, by2, bubbleW, bubbleH, 8) : ctx.rect(bx2, by2, bubbleW, bubbleH);
+    ctx.fill();
+    ctx.strokeStyle = borderColor; ctx.lineWidth = 2; ctx.stroke();
 
-        ctx.fillStyle = '#1e293b'; ctx.textAlign = 'center';
-        ctx.fillText(b.speechText, cx, by2 + bubbleH/2 + 5);
-        ctx.textAlign = 'left';
-    }
+    // Rabicho do balão
+    ctx.beginPath();
+    ctx.moveTo(cx - 8, by2 + bubbleH);
+    ctx.lineTo(cx + 8, by2 + bubbleH);
+    ctx.lineTo(cx, by2 + bubbleH + 10);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fill();
+
+    ctx.fillStyle = '#1e293b'; ctx.textAlign = 'center';
+    ctx.fillText(text, cx, by2 + bubbleH/2 + 5);
+    ctx.textAlign = 'left';
+}
+
+function drawWorkerNpc(n) {
+    let cx = n.x + n.w/2; let cy = n.y + n.h;
+
+    if(!animStates['npc']) animStates['npc'] = { cycle: 0 };
+    if(n.isMoving) animStates['npc'].cycle += 0.2; else animStates['npc'].cycle = 0;
+    let legSwing = Math.sin(animStates['npc'].cycle) * 10;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.ellipse(cx, cy, 14, 6, 0, 0, Math.PI*2); ctx.fill();
+
+    // Pernas à mostra (bermuda curta)
+    ctx.strokeStyle = '#c68b59'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(cx, cy - 18); ctx.lineTo(cx - 5 + legSwing, cy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, cy - 18); ctx.lineTo(cx + 5 - legSwing, cy); ctx.stroke();
+
+    // Bermuda/calça cinza
+    ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 10; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(cx, cy - 30); ctx.lineTo(cx, cy - 16); ctx.stroke();
+
+    // Braços (pele)
+    ctx.strokeStyle = '#c68b59'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(cx, cy - 32); ctx.lineTo(cx - 13, cy - 24 - legSwing); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, cy - 32); ctx.lineTo(cx + 13, cy - 24 + legSwing); ctx.stroke();
+
+    // Colete laranja de segurança por cima do peito
+    ctx.strokeStyle = '#f97316'; ctx.lineWidth = 10; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(cx, cy - 33); ctx.quadraticCurveTo(cx - 5, cy - 23, cx, cy - 15); ctx.stroke();
+
+    // Faixa refletiva diagonal do colete
+    ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(cx - 6, cy - 30); ctx.lineTo(cx + 4, cy - 17); ctx.stroke();
+
+    let headY = cy - 42;
+    ctx.fillStyle = '#c68b59';
+    ctx.beginPath(); ctx.arc(cx, headY, 11, 0, Math.PI*2); ctx.fill();
+
+    // Boné escuro
+    ctx.fillStyle = '#1f2937';
+    ctx.beginPath(); ctx.arc(cx, headY - 2, 11, Math.PI, 0); ctx.fill();
+    ctx.fillRect(cx - 3, headY - 8, 15, 5);
+
+    // Olhos simples
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(cx - 6, headY - 1, 3, 3);
+    ctx.fillRect(cx + 3, headY - 1, 3, 3);
+
+    if(n.speechTimer > 0 && n.speechText) drawSpeechBubble(cx, headY - 60, n.speechText, '#f97316');
 }
 
 function drawLighting(me, viewer) {
