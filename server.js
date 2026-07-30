@@ -201,7 +201,11 @@ function checkEndGameCondition() {
 
 function resetGame() {
     gameState = 'LOBBY';
-    boss = { x: MAP_W/2, y: MAP_H/2, w: 32, h: 32, state: 'PATROL', angle: 0, targetId: null, lastKnownPos: null, wpIndex: 0, prevX: 0, prevY: 0, stuckTimer: 0, isMoving: false, speechText: null, speechTimer: 0, role: 'boss' };
+    boss = {
+        x: MAP_W/2, y: MAP_H/2, w: 32, h: 32, state: 'PATROL', angle: 0, targetId: null, lastKnownPos: null,
+        waypoints: [ {x: 400, y: 300}, {x: 1000, y: 300}, {x: 1500, y: 400}, {x: 350, y: 850}, {x: 950, y: 850}, {x: 500, y: 1450}, {x: 1400, y: 1450} ],
+        wpIndex: 0, prevX: 0, prevY: 0, stuckTimer: 0, isMoving: false, speechText: null, speechTimer: 0, role: 'boss'
+    };
     npc.x = 1400; npc.y = 1450; npc.wpIndex = 0; npc.speechText = null; npc.speechTimer = 0; npc.speakCooldown = 150; npc.isMoving = false; npc.holdingId = null; npc.holdTimer = 0; npc.grabCooldown = 0;
     gameManager.level = 1; gameManager.globalEvent = 'NONE'; gameManager.eventTimer = 0;
     gameManager.objectivesCollected = 0; gameManager.activeItem = null; gameManager.speakCooldown = 300;
