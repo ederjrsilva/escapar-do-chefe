@@ -2,10 +2,11 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Hospital Escape</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Roboto', sans-serif; color: #fff; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Roboto', sans-serif; color: #fff; touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; }
         .screen { display: none; width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; flex-direction: column; align-items: center; justify-content: center; }
         .screen.active { display: flex; }
         #lobby { background: #0f172a; }
@@ -44,7 +45,7 @@
         #mobile-controls {
             position: fixed; left: 0; right: 0; bottom: 0; height: 175px;
             display: flex; justify-content: space-between; align-items: flex-end;
-            padding: 0 18px 18px; box-sizing: border-box;
+            padding: 0 18px calc(18px + env(safe-area-inset-bottom, 0px)); box-sizing: border-box;
             pointer-events: none; z-index: 50;
         }
         #dpad { position: relative; width: 132px; height: 132px; pointer-events: auto; }
