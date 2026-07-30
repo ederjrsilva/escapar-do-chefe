@@ -88,7 +88,9 @@ io.on('connection', (socket) => {
     try {
         const fotosDir = path.join(__dirname, 'fotos');
         if (fs.existsSync(fotosDir)) {
-            photoFiles = fs.readdirSync(fotosDir).filter(file => /\.(jpg|jpeg|png|webp)$/i.test(file));
+            // Arquivos começando com "npc-" são reservados a personagens fixos
+            // (ex: o trabalhador ambiente) e não aparecem como opção de avatar.
+            photoFiles = fs.readdirSync(fotosDir).filter(file => /\.(jpg|jpeg|png|webp)$/i.test(file) && !/^npc-/i.test(file));
         }
     } catch (e) { console.log("Erro ao ler pasta de fotos."); }
     socket.emit('photoList', photoFiles);
