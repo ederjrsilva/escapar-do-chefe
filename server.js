@@ -39,10 +39,22 @@ const map = {
     walls: [
         {x: 0, y: 0, w: MAP_W, h: 20}, {x: 0, y: MAP_H-20, w: MAP_W, h: 20},
         {x: 0, y: 0, w: 20, h: MAP_H}, {x: MAP_W-20, y: 0, w: 20, h: MAP_H},
-        {x: 700, y: 100, w: 20, h: 400}, {x: 1220, y: 100, w: 20, h: 600},
-        {x: 100, y: 520, w: 400, h: 20}, {x: 600, y: 520, w: 1200, h: 20},
-        {x: 620, y: 600, w: 20, h: 500}, {x: 1220, y: 800, w: 20, h: 300},
-        {x: 100, y: 1120, w: 1700, h: 20}, {x: 920, y: 1140, w: 20, h: 560}
+        // Parede A (RECEPÇÃO | FARMÁCIA) — com abertura
+        {x: 700, y: 100, w: 20, h: 165}, {x: 700, y: 365, w: 20, h: 135},
+        // Parede B (FARMÁCIA/RECEPÇÃO | LABORATÓRIO) — com abertura
+        {x: 1220, y: 100, w: 20, h: 265}, {x: 1220, y: 465, w: 20, h: 235},
+        // Parede C (RECEPÇÃO | RH & COMPRAS) — com abertura
+        {x: 100, y: 520, w: 155, h: 20}, {x: 355, y: 520, w: 145, h: 20},
+        // Parede D (topo | meio) — duas aberturas
+        {x: 600, y: 520, w: 325, h: 20}, {x: 1025, y: 520, w: 360, h: 20}, {x: 1485, y: 520, w: 315, h: 20},
+        // Parede E (RH & COMPRAS | RADIOLOGIA) — com abertura
+        {x: 620, y: 600, w: 20, h: 195}, {x: 620, y: 895, w: 20, h: 205},
+        // Parede F (RADIOLOGIA | ALMOXARIFADO, trecho superior) — com abertura
+        {x: 1220, y: 800, w: 20, h: 85}, {x: 1220, y: 985, w: 20, h: 115},
+        // Parede G (meio | baixo) — duas aberturas
+        {x: 100, y: 1120, w: 500, h: 20}, {x: 700, y: 1120, w: 500, h: 20}, {x: 1300, y: 1120, w: 500, h: 20},
+        // Parede H (REFEITÓRIO | ALMOXARIFADO) — com abertura
+        {x: 920, y: 1140, w: 20, h: 215}, {x: 920, y: 1455, w: 20, h: 245}
     ],
     hidingSpots: [
         {x: 120, y: 120, w: 60, h: 60}, {x: 820, y: 120, w: 60, h: 60}, {x: 1320, y: 120, w: 60, h: 60},
@@ -59,13 +71,81 @@ const NPC_PHRASES = ["Nem eu nem tu", "Pode vir, meu patrão", "Me dá um real"]
 const NPC_HOLD_PHRASES = ["Eu aceito Pix", "Me paga aí que eu solto", "Não vou te soltar", "Rapaz, eu tava doente", "Nem eu nem tu"];
 const TOTAL_OBJECTIVES = 20;
 
+// Pontos usados pra navegação do chefe: centro de cada setor + centro de cada
+// abertura/porta do mapa. Servem tanto pra ele explorar tudo aleatoriamente
+// (PATROL) quanto pra achar o caminho até uma abertura quando alguém está
+// bloqueado por uma parede (CHASE/SEARCH).
+const ROOM_CENTERS = [
+    {x: 400, y: 300}, {x: 1000, y: 300}, {x: 1550, y: 400}, {x: 1700, y: 250}, {x: 350, y: 850},
+    {x: 950, y: 850}, {x: 500, y: 1450}, {x: 1400, y: 1450}, {x: 1700, y: 1450}
+];
+const PASSAGES = [
+    {x: 710, y: 315}, {x: 1230, y: 415}, {x: 305, y: 530}, {x: 975, y: 530}, {x: 1435, y: 530},
+    {x: 630, y: 845}, {x: 1230, y: 935}, {x: 650, y: 1130}, {x: 1250, y: 1130}, {x: 930, y: 1405},
+    {x: 760, y: 300}, {x: 1270, y: 400}
+];
+const PATROL_POINTS = [...ROOM_CENTERS, ...PASSAGES];
+
+// Testa se o segmento de reta (x1,y1)-(x2,y2) cruza o retângulo `rect` de verdade
+// (Liang-Barsky) — precisa ser preciso pra achar aberturas corretamente, uma
+// simples comparação de caixas delimitadoras erra demais em segmentos longos.
+function segmentHitsRect(x1, y1, x2, y2, rect) {
+    let dx = x2 - x1, dy = y2 - y1;
+    let p = [-dx, dx, -dy, dy];
+    let q = [x1 - rect.x, rect.x + rect.w - x1, y1 - rect.y, rect.y + rect.h - y1];
+    let u1 = 0, u2 = 1;
+    for (let i = 0; i < 4; i++) {
+        if (p[i] === 0) {
+            if (q[i] < 0) return false;
+        } else {
+            let t = q[i] / p[i];
+            if (p[i] < 0) { if (t > u2) return false; if (t > u1) u1 = t; }
+            else { if (t < u1) return false; if (t < u2) u2 = t; }
+        }
+    }
+    return true;
+}
+
+// Checa se dá pra "ver" (linha reta) de um ponto a outro sem nenhuma parede no meio
+function hasClearPath(x1, y1, x2, y2) {
+    for (let i = 0; i < map.walls.length; i++) {
+        if (segmentHitsRect(x1, y1, x2, y2, map.walls[i])) return false;
+    }
+    return true;
+}
+
+// Acha a melhor abertura pra ir até (toX,toY). Prioriza aberturas que, dali,
+// já enxergam o alvo de verdade (senão o chefe podia escolher uma abertura
+// "mais perto" só na conta, mas que continua sem visão do alvo depois de
+// chegar lá, e ficava preso recalculando a mesma escolha ruim pra sempre).
+function findBestPassage(fromX, fromY, toX, toY) {
+    let bestClear = null, bestClearScore = Infinity;
+    let bestAny = null, bestAnyScore = Infinity;
+    PASSAGES.forEach(p => {
+        let score = dist(fromX, fromY, p.x, p.y) + dist(p.x, p.y, toX, toY);
+        if (score < bestAnyScore) { bestAnyScore = score; bestAny = p; }
+        if (hasClearPath(p.x, p.y, toX, toY) && score < bestClearScore) { bestClearScore = score; bestClear = p; }
+    });
+    return bestClear || bestAny;
+}
+
+function pickRandomPatrolPoint(exclude) {
+    let choices = PATROL_POINTS;
+    if (exclude) choices = PATROL_POINTS.filter(p => dist(p.x, p.y, exclude.x, exclude.y) > 5);
+    return choices[Math.floor(Math.random() * choices.length)];
+}
+
 let gameManager = { level: 1, globalEvent: 'NONE', eventTimer: 0, objectivesCollected: 0, totalObjectives: TOTAL_OBJECTIVES, activeItem: null, speakCooldown: 300 };
 
-let boss = {
-    x: MAP_W/2, y: MAP_H/2, w: 32, h: 32, state: 'PATROL', angle: 0, targetId: null, lastKnownPos: null,
-    waypoints: [ {x: 400, y: 300}, {x: 1000, y: 300}, {x: 1500, y: 400}, {x: 350, y: 850}, {x: 950, y: 850}, {x: 500, y: 1450}, {x: 1400, y: 1450} ],
-    wpIndex: 0, prevX: 0, prevY: 0, stuckTimer: 0, isMoving: false, speechText: null, speechTimer: 0, role: 'boss'
-};
+function createBoss() {
+    return {
+        x: MAP_W/2, y: MAP_H/2, w: 32, h: 32, state: 'PATROL', angle: 0, targetId: null, lastKnownPos: null,
+        patrolTarget: null, navWaypoint: null, progressCheck: null,
+        prevX: 0, prevY: 0, stuckTimer: 0, isMoving: false, speechText: null, speechTimer: 0, role: 'boss'
+    };
+}
+
+let boss = createBoss();
 
 // Personagem ambiente: fica andando de um lado pro outro. Se encostar em algum
 // jogador, segura ele parado por 2 segundos (só um por vez) antes de soltar.
@@ -201,18 +281,22 @@ function checkEndGameCondition() {
 
 function resetGame() {
     gameState = 'LOBBY';
-    boss = {
-        x: MAP_W/2, y: MAP_H/2, w: 32, h: 32, state: 'PATROL', angle: 0, targetId: null, lastKnownPos: null,
-        waypoints: [ {x: 400, y: 300}, {x: 1000, y: 300}, {x: 1500, y: 400}, {x: 350, y: 850}, {x: 950, y: 850}, {x: 500, y: 1450}, {x: 1400, y: 1450} ],
-        wpIndex: 0, prevX: 0, prevY: 0, stuckTimer: 0, isMoving: false, speechText: null, speechTimer: 0, role: 'boss'
-    };
+    boss = createBoss();
     npc.x = 1400; npc.y = 1450; npc.wpIndex = 0; npc.speechText = null; npc.speechTimer = 0; npc.speakCooldown = 150; npc.isMoving = false; npc.holdingId = null; npc.holdTimer = 0; npc.grabCooldown = 0;
     gameManager.level = 1; gameManager.globalEvent = 'NONE'; gameManager.eventTimer = 0;
     gameManager.objectivesCollected = 0; gameManager.activeItem = null; gameManager.speakCooldown = 300;
     // Reseta o "pronto" de todo mundo também — sem isso, o lobby ficava travado
     // em "Iniciando..." pra sempre depois de uma partida, pois todo mundo
     // continuava marcado como pronto sem ninguém apertar o botão de novo.
-    Object.values(players).forEach(p => { p.isDead = false; p.saved = false; p.isHidden = false; p.ready = false; p.heldByNpc = false; });
+    // Também devolve cada jogador pra posição inicial de spawn — sem isso,
+    // eles "nasciam" no ponto exato onde tinham sido pegos na partida anterior.
+    let spawnIndex = 0;
+    Object.values(players).forEach(p => {
+        p.isDead = false; p.saved = false; p.isHidden = false; p.ready = false; p.heldByNpc = false;
+        p.x = 200 + (spawnIndex * 50); p.y = 200;
+        p.stamina = 100; p.noise = 0; p.isMoving = false;
+        spawnIndex++;
+    });
     io.emit('resetToLobby');
     io.emit('lobbyUpdate', Object.values(players));
 }
@@ -282,23 +366,53 @@ setInterval(() => {
     let targetX = boss.x, targetY = boss.y;
 
     if(boss.state === 'PATROL') {
-        let wp = boss.waypoints[boss.wpIndex]; targetX = wp.x; targetY = wp.y;
-        if(dist(boss.x, boss.y, wp.x, wp.y) < 20) boss.wpIndex = (boss.wpIndex + 1) % boss.waypoints.length;
+        // Exploração aleatória: em vez de girar sempre na mesma ordem por 7
+        // pontos fixos, sorteia o próximo destino entre TODOS os setores e
+        // aberturas do mapa — assim ele cobre o cenário inteiro com o tempo,
+        // em vez de ficar preso rodando sempre pelo mesmo lado.
+        if(!boss.patrolTarget || dist(boss.x, boss.y, boss.patrolTarget.x, boss.patrolTarget.y) < 20) {
+            boss.patrolTarget = pickRandomPatrolPoint(boss.patrolTarget);
+        }
+        targetX = boss.patrolTarget.x; targetY = boss.patrolTarget.y;
     } 
     else if(boss.state === 'CHASE' && players[boss.targetId] && !players[boss.targetId].isDead) {
-        targetX = players[boss.targetId].x; targetY = players[boss.targetId].y; boss.lastKnownPos = {x: targetX, y: targetY};
+        let tgt = players[boss.targetId];
+        boss.lastKnownPos = {x: tgt.x, y: tgt.y};
+        if(hasClearPath(boss.x, boss.y, tgt.x, tgt.y)) {
+            // Caminho livre até a pessoa: vai direto
+            targetX = tgt.x; targetY = tgt.y; boss.navWaypoint = null;
+        } else {
+            // Tem parede no meio (ex: ele viu/ouviu alguém bem perto do outro
+            // lado). Em vez de ficar empurrando a parede, mira na abertura
+            // mais próxima que o aproxima da pessoa.
+            boss.navWaypoint = findBestPassage(boss.x, boss.y, tgt.x, tgt.y);
+            let via = boss.navWaypoint || tgt;
+            targetX = via.x; targetY = via.y;
+        }
     } 
     else if(boss.state === 'SEARCH') {
         if(boss.lastKnownPos) {
-            targetX = boss.lastKnownPos.x; targetY = boss.lastKnownPos.y;
-            if(dist(boss.x, boss.y, targetX, targetY) < 20) boss.state = 'PATROL';
+            let lp = boss.lastKnownPos;
+            if(hasClearPath(boss.x, boss.y, lp.x, lp.y)) {
+                targetX = lp.x; targetY = lp.y; boss.navWaypoint = null;
+            } else {
+                boss.navWaypoint = findBestPassage(boss.x, boss.y, lp.x, lp.y);
+                let via = boss.navWaypoint || lp;
+                targetX = via.x; targetY = via.y;
+            }
+            if(dist(boss.x, boss.y, lp.x, lp.y) < 20) { boss.state = 'PATROL'; boss.navWaypoint = null; }
         } else boss.state = 'PATROL';
     }
 
     let dx = targetX - boss.x; let dy = targetY - boss.y;
-    if(dist(boss.x, boss.y, targetX, targetY) > 2) boss.angle = Math.atan2(dy, dx);
-    
-    let nextX = boss.x + Math.cos(boss.angle) * speed; let nextY = boss.y + Math.sin(boss.angle) * speed;
+    let distToTarget = dist(boss.x, boss.y, targetX, targetY);
+    if(distToTarget > 2) boss.angle = Math.atan2(dy, dx);
+
+    // Nunca anda mais do que falta pro alvo — sem isso, quando ele fica bem
+    // perto de um ponto (ex: o meio de uma abertura), cada passo ultrapassava
+    // o alvo e ele ficava oscilando pra frente e pra trás no mesmo lugar.
+    let moveDist = Math.min(speed, distToTarget);
+    let nextX = boss.x + Math.cos(boss.angle) * moveDist; let nextY = boss.y + Math.sin(boss.angle) * moveDist;
     let hitX = false, hitY = false;
     map.walls.forEach(w => {
         if(rectIntersect({x: nextX, y: boss.y, w: boss.w, h: boss.h}, w)) hitX = true;
@@ -309,16 +423,20 @@ setInterval(() => {
     boss.isMoving = (Math.abs(boss.x - boss.prevX) > 0.5 || Math.abs(boss.y - boss.prevY) > 0.5);
 
     // SISTEMA ANTI-TRAVAMENTO (UNSTUCK)
-    if (!boss.isMoving) {
+    // Chegar bem em cima do alvo atual (distância ~0) e ficar parado ali por
+    // um instante É normal — é só o momento em que ele vai recalcular o
+    // próximo destino. Isso não conta como "travado".
+    let arrivedAtTarget = distToTarget < 4;
+    if (!boss.isMoving && !arrivedAtTarget) {
         boss.stuckTimer++;
         if (boss.stuckTimer > 15) { // Se ficar parado contra a parede por 0.5 seg
             boss.state = 'PATROL';
             boss.targetId = null;
-            boss.wpIndex = (boss.wpIndex + 1) % boss.waypoints.length; // Muda a rota
-            
-            // Dá um leve empurrãozinho na direção do novo waypoint pra soltar do polígono
-            let wp = boss.waypoints[boss.wpIndex];
-            let angleToWp = Math.atan2(wp.y - boss.y, wp.x - boss.x);
+            boss.navWaypoint = null;
+            boss.patrolTarget = pickRandomPatrolPoint(boss.patrolTarget); // Muda a rota
+
+            // Dá um leve empurrãozinho na direção do novo destino pra soltar do polígono
+            let angleToWp = Math.atan2(boss.patrolTarget.y - boss.y, boss.patrolTarget.x - boss.x);
             boss.x += Math.cos(angleToWp) * 10;
             boss.y += Math.sin(angleToWp) * 10;
             
@@ -326,6 +444,25 @@ setInterval(() => {
         }
     } else {
         boss.stuckTimer = 0;
+    }
+
+    // Segunda rede de segurança: às vezes ele fica "deslizando" só num eixo
+    // perto de uma quina (isMoving continua true porque tecnicamente se move
+    // um pouco a cada frame), sem nunca conseguir de fato atravessar. A cada
+    // 1,5s, checa se ele progrediu de verdade; se não, força uma nova rota.
+    if (!boss.progressCheck) boss.progressCheck = { x: boss.x, y: boss.y, timer: 45 };
+    boss.progressCheck.timer--;
+    if (boss.progressCheck.timer <= 0) {
+        if (dist(boss.x, boss.y, boss.progressCheck.x, boss.progressCheck.y) < 25) {
+            boss.state = 'PATROL';
+            boss.targetId = null;
+            boss.navWaypoint = null;
+            boss.patrolTarget = pickRandomPatrolPoint(boss.patrolTarget);
+            let angleToWp = Math.atan2(boss.patrolTarget.y - boss.y, boss.patrolTarget.x - boss.x);
+            boss.x += Math.cos(angleToWp) * 12;
+            boss.y += Math.sin(angleToWp) * 12;
+        }
+        boss.progressCheck = { x: boss.x, y: boss.y, timer: 45 };
     }
     
     boss.prevX = boss.x; boss.prevY = boss.y;
@@ -415,11 +552,7 @@ setInterval(() => {
             if(angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
             // Campo de visão um pouco mais largo (era PI/2.5)
             if(angleDiff < Math.PI / 2 || isClose) {
-                let hasLOS = true;
-                map.walls.forEach(w => { 
-                    if (Math.min(boss.x, p.x) < w.x+w.w && Math.max(boss.x, p.x) > w.x && Math.min(boss.y, p.y) < w.y+w.h && Math.max(boss.y, p.y) > w.y) hasLOS = false;
-                });
-                isSeen = hasLOS;
+                isSeen = hasClearPath(boss.x, boss.y, p.x, p.y);
             }
         }
         if((isSeen || isHeard || isClose) && d < closestDist) { closestDist = d; closestP = p; }
