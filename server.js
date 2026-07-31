@@ -295,6 +295,7 @@ function resetGame() {
         p.isDead = false; p.saved = false; p.isHidden = false; p.ready = false; p.heldByNpc = false;
         p.x = 200 + (spawnIndex * 50); p.y = 200;
         p.stamina = 100; p.noise = 0; p.isMoving = false;
+        p.inputs = { up: false, down: false, left: false, right: false, run: false, sneak: false };
         spawnIndex++;
     });
     io.emit('resetToLobby');
