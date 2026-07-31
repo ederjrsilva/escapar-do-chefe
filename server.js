@@ -19,6 +19,61 @@ process.on('unhandledRejection', (err) => {
     console.error('[unhandledRejection] promise sem tratamento, servidor continua rodando:', err);
 });
 
+// ===== Painel de admin (liga/desliga o jogo) =====
+// Tudo isolado aqui pra não mexer no index.html/client.js. Sem senha por
+// enquanto — é só uma flag em memória; se quiser, dá pra proteger a rota
+// /admin depois com uma senha simples.
+let gameEnabled = true;
+
+const OFF_PAGE_HTML = `<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hospital Escape</title>
+<style>
+    body { margin:0; height:100vh; display:flex; align-items:center; justify-content:center; background:#0f172a; color:#fff; font-family:'Roboto',sans-serif; text-align:center; padding:20px; box-sizing:border-box; }
+    h1 { font-size:28px; color:#facc15; }
+    p { color:#94a3b8; }
+</style></head>
+<body><div><h1>🏥 Estamos off, retorne no horário de almoço</h1><p>Volte mais tarde pra jogar!</p></div></body></html>`;
+
+function adminPageHtml() {
+    return `<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin - Hospital Escape</title>
+<style>
+    body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; background:#0f172a; color:#fff; font-family:'Roboto',sans-serif; }
+    .card { background:#1e293b; padding:30px 40px; border-radius:12px; border:2px solid #334155; text-align:center; }
+    h1 { font-size:20px; margin-bottom:10px; }
+    .status { font-weight:bold; font-size:18px; margin:15px 0; }
+    .on { color:#4caf50; } .off { color:#ef4444; }
+    button { padding:12px 24px; font-size:16px; font-weight:bold; border:none; border-radius:8px; cursor:pointer; background:#38bdf8; color:#000; }
+    button:hover { background:#0284c7; color:#fff; }
+</style></head>
+<body>
+    <div class="card">
+        <h1>🔧 Painel do Jogo</h1>
+        <div class="status ${gameEnabled ? 'on' : 'off'}">Status atual: ${gameEnabled ? 'LIGADO ✅' : 'DESLIGADO ⛔'}</div>
+        <form method="POST" action="/admin/toggle">
+            <button type="submit">${gameEnabled ? 'Desligar jogo' : 'Ligar jogo'}</button>
+        </form>
+    </div>
+</body></html>`;
+}
+
+app.get('/admin', (req, res) => { res.send(adminPageHtml()); });
+
+app.post('/admin/toggle', express.urlencoded({ extended: true }), (req, res) => {
+    gameEnabled = !gameEnabled;
+    console.log(`[admin] jogo ${gameEnabled ? 'LIGADO' : 'DESLIGADO'} via /admin`);
+    res.redirect('/admin');
+});
+
+// Se o jogo estiver desligado, a página principal mostra o aviso em vez do
+// jogo. Isso roda ANTES do express.static, então intercepta só a rota "/".
+app.get('/', (req, res, next) => {
+    if (!gameEnabled) return res.send(OFF_PAGE_HTML);
+    next();
+});
+
 app.use(express.static('public'));
 app.use('/fotos', express.static(path.join(__dirname, 'fotos')));
 
@@ -176,6 +231,7 @@ function dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
 const colors = ['#00bcd4', '#e91e63', '#ff9800', '#9c27b0', '#8bc34a', '#ffeb3b'];
 
 io.on('connection', (socket) => {
+    if(!gameEnabled) { socket.disconnect(); return; }
     if(gameState !== 'LOBBY') { socket.emit('gameFull'); socket.disconnect(); return; }
 
     let photoFiles = [];
