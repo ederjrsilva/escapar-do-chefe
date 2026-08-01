@@ -23,7 +23,7 @@ process.on('unhandledRejection', (err) => {
 // Tudo isolado aqui pra não mexer no index.html/client.js. Sem senha por
 // enquanto — é só uma flag em memória; se quiser, dá pra proteger a rota
 // /admin depois com uma senha simples.
-let gameEnabled = true;
+let gameEnabled = false;
 
 const OFF_PAGE_HTML = `<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
