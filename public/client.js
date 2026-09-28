@@ -14,6 +14,21 @@ const imageCache = {};
 const animStates = {}; 
 let availablePhotos = [];
 
+// ===== Sistema de Bosses personalizáveis (lista + votação) =====
+let currentBosses = [];      // catálogo de bosses (id, name, appearance) vindo do servidor
+let latestVoteTally = null;  // { tally: {bossId: {count, voters}}, votedCount, totalPlayers }
+let myVoteBossId = null;
+
+function preloadBossImages(list) {
+    list.forEach(b => {
+        let photo = b.appearance && b.appearance.facePhoto;
+        if (photo && !imageCache['boss:' + photo]) {
+            let img = new Image(); img.src = `/fotos/${photo}`;
+            imageCache['boss:' + photo] = img;
+        }
+    });
+}
+
 // Foto de referência fixa do personagem ambiente (trabalhador). Nome com
 // prefixo "npc-" pra nunca aparecer como opção de avatar no lobby — o
 // servidor já filtra isso em photoList. Caminho mocado apontando pra pasta
@@ -124,6 +139,66 @@ socket.on('photoList', (photos) => {
 
 function openPhotoModal() { document.getElementById('photo-modal').style.display = 'block'; }
 
+socket.on('bossesList', (list) => { currentBosses = list; preloadBossImages(list); });
+socket.on('bossesUpdated', (list) => {
+    currentBosses = list; preloadBossImages(list);
+    // Se a votação já estiver na tela, atualiza os cards em tempo real
+    if(document.getElementById('boss-select').classList.contains('active')) renderBossGrid();
+});
+
+socket.on('bossVoteStart', (list) => {
+    currentBosses = list; preloadBossImages(list); myVoteBossId = null; latestVoteTally = null;
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('boss-select').classList.add('active');
+    document.getElementById('boss-tie-warning').classList.add('hidden');
+    document.getElementById('boss-vote-status').innerText = 'Escolha quem vai perseguir vocês nessa partida:';
+    renderBossGrid();
+});
+
+socket.on('bossVoteUpdate', (data) => {
+    latestVoteTally = data;
+    document.getElementById('boss-vote-status').innerText = `${data.votedCount}/${data.totalPlayers} jogadores votaram`;
+    document.getElementById('boss-tie-warning').classList.add('hidden');
+    renderBossGrid();
+});
+
+socket.on('bossVoteTie', (tiedNames) => {
+    let w = document.getElementById('boss-tie-warning');
+    w.innerText = `Empate entre: ${tiedNames.join(', ')}. Cheguem a um consenso — alguém precisa mudar o voto!`;
+    w.classList.remove('hidden');
+});
+
+function renderBossGrid() {
+    let grid = document.getElementById('boss-grid');
+    if(!grid) return;
+    grid.innerHTML = '';
+    currentBosses.forEach(b => {
+        let card = document.createElement('div');
+        card.className = 'boss-card' + (myVoteBossId === b.id ? ' voted-mine' : '');
+
+        let a = b.appearance || {};
+        let faceHtml = a.facePhoto
+            ? `<img src="/fotos/${a.facePhoto}">`
+            : `<div style="width:100%;height:100%;background:${a.skinColor || '#fca5a5'};position:relative;">
+                 <div style="position:absolute;top:38%;left:20%;width:14%;height:11%;background:${a.eyeColor || '#ff0000'};border-radius:2px;"></div>
+                 <div style="position:absolute;top:38%;right:20%;width:14%;height:11%;background:${a.eyeColor || '#ff0000'};border-radius:2px;"></div>
+               </div>`;
+
+        let voteInfo = latestVoteTally ? latestVoteTally.tally[b.id] : null;
+        let badgeHtml = voteInfo && voteInfo.count > 0 ? `<div class="boss-vote-badge">${voteInfo.count}</div>` : '';
+        let votersText = voteInfo && voteInfo.voters.length ? voteInfo.voters.join(', ') : '';
+
+        card.innerHTML = `<div class="boss-face-wrap">${faceHtml}</div><div class="boss-name-bar">${b.name}</div><div class="boss-voters">${votersText}</div>${badgeHtml}`;
+        card.onclick = () => {
+            AudioSys.ctx.resume();
+            myVoteBossId = b.id;
+            socket.emit('voteBoss', b.id);
+            renderBossGrid();
+        };
+        grid.appendChild(card);
+    });
+}
+
 socket.on('lobbyUpdate', (playersArray) => {
     // O servidor só emite isso quando está em estado LOBBY. Se o cliente ainda
     // achava que estava em PLAYING/GAMEOVER (ex: depois de um reinício do
@@ -143,10 +218,10 @@ socket.on('lobbyUpdate', (playersArray) => {
         let avatarHTML = p.avatar ? `<img src="/fotos/${p.avatar}" class="avatar-img" onclick="${isMe ? 'openPhotoModal()' : ''}">` : 
                                     `<div class="avatar-img" style="background:${p.color}; display:flex; align-items:center; justify-content:center; cursor:${isMe?'pointer':'default'};" onclick="${isMe ? 'openPhotoModal()' : ''}">${isMe?'📸':''}</div>`;
         
-        card.innerHTML = `<h3>${p.name}</h3>${avatarHTML}<p>${p.ready ? 'Pronto ✓' : 'Aguardando...'}</p>`;
+        card.innerHTML = `<h3>${p.name}</h3>${avatarHTML}<p>${p.ready ? 'Avançou ✓' : 'Aguardando...'}</p>`;
         if(isMe && !p.ready) {
             if(p.avatar) {
-                let btn = document.createElement('button'); btn.innerText = "Estou Pronto!";
+                let btn = document.createElement('button'); btn.innerText = "Avançar";
                 btn.onclick = () => { AudioSys.ctx.resume(); socket.emit('setReady', true); };
                 card.appendChild(btn);
             } else {
@@ -161,7 +236,7 @@ socket.on('lobbyUpdate', (playersArray) => {
         }
         grid.appendChild(card);
     });
-    document.getElementById('btn-start').innerText = (playersArray.length > 0 && playersArray.every(p => p.ready)) ? "Iniciando..." : "Aguardando todos ficarem Prontos...";
+    document.getElementById('btn-start').innerText = (playersArray.length > 0 && playersArray.every(p => p.ready)) ? "Escolhendo o Boss..." : "Aguardando todos avançarem...";
 });
 
 socket.on('gameStart', (mapData) => {
@@ -182,6 +257,7 @@ socket.on('gameStart', (mapData) => {
 
 function goToLobbyScreen() {
     gameState = 'LOBBY'; syncData = null; staticMap = null;
+    myVoteBossId = null; latestVoteTally = null;
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById('lobby').classList.add('active');
     document.getElementById('hud').classList.add('hidden');
@@ -257,6 +333,8 @@ function updateHUD() {
         objText.style.color = "#4caf50";
     }
     document.getElementById('alive-count').innerText = Object.values(syncData.players).filter(p => !p.isDead).length;
+    let bossLabel = document.getElementById('boss-name-label');
+    if(bossLabel && syncData.boss && syncData.boss.name) bossLabel.innerText = `⚠ ${syncData.boss.name}`;
 
     let banner = document.getElementById('spectator-banner');
     if(banner) {
@@ -456,6 +534,10 @@ function drawBossMan(b) {
     
     let legSwing = Math.sin(animStates['boss'].cycle) * 12;
 
+    // Aparência: cada boss tem sua própria paleta/foto (ver menu de seleção),
+    // mas a movimentação/lógica desenhada aqui é sempre igual pra qualquer um.
+    let ap = b.appearance || { skinColor: '#fca5a5', hairColor: '#d1d5db', eyeColor: '#ff0000', bodyColor: '#94a3b8' };
+
     ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.ellipse(cx, cy, 16, 7, 0, 0, Math.PI*2); ctx.fill();
 
     // Calça social escura (pernas) - mantém a cor original
@@ -463,8 +545,8 @@ function drawBossMan(b) {
     ctx.beginPath(); ctx.moveTo(cx, cy - 15); ctx.lineTo(cx - 5 + legSwing, cy); ctx.stroke(); 
     ctx.beginPath(); ctx.moveTo(cx, cy - 15); ctx.lineTo(cx + 5 - legSwing, cy); ctx.stroke(); 
 
-    // Camisa social branca (torso e braços) - contorno escuro por baixo pra não sumir no fundo claro do mapa
-    ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 10; ctx.lineCap = 'round';
+    // Camisa/roupa (torso e braços) na cor de corpo escolhida - contorno escuro por baixo pra não sumir no fundo claro do mapa
+    ctx.strokeStyle = ap.bodyColor; ctx.lineWidth = 10; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(cx, cy - 35); ctx.quadraticCurveTo(cx - 5, cy - 25, cx, cy - 15); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(cx, cy - 32); ctx.lineTo(cx - 15, cy - 25 - legSwing); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(cx, cy - 32); ctx.lineTo(cx + 15, cy - 25 + legSwing); ctx.stroke();
@@ -479,19 +561,39 @@ function drawBossMan(b) {
     ctx.beginPath(); ctx.moveTo(cx - 3, cy - 34); ctx.lineTo(cx + 3, cy - 34); ctx.lineTo(cx + 2, cy - 18); ctx.lineTo(cx, cy - 14); ctx.lineTo(cx - 2, cy - 18); ctx.closePath(); ctx.fill();
 
     let headY = cy - 45;
-    ctx.fillStyle = '#fca5a5'; 
-    ctx.beginPath(); ctx.arc(cx, headY, 12, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#d1d5db';
-    ctx.beginPath(); ctx.arc(cx - 11, headY, 5, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(cx + 11, headY, 5, 0, Math.PI*2); ctx.fill();
-    
-    ctx.fillStyle = '#ff0000'; // Olhos
-    ctx.fillRect(cx - 7, headY - 3, 4, 3);
-    ctx.fillRect(cx + 3, headY - 3, 4, 3);
-    
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 2; // Sobrancelha
-    ctx.beginPath(); ctx.moveTo(cx - 9, headY - 6); ctx.lineTo(cx - 3, headY - 4); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx + 9, headY - 6); ctx.lineTo(cx + 3, headY - 4); ctx.stroke();
+
+    // "O Caçador" (boss padrão/original) sempre mantém o rosto 100% procedural
+    // de sempre em jogo — a foto dele (ver appearance.facePhoto) é usada só
+    // no card do menu de seleção, não substitui a cara dele durante a partida.
+    let facePhotoKey = (ap.facePhoto && b.bossId !== 'default') ? ('boss:' + ap.facePhoto) : null;
+    let faceImg = facePhotoKey ? imageCache[facePhotoKey] : null;
+
+    if(faceImg && faceImg.complete && faceImg.naturalWidth > 0) {
+        // Mesmo enquadramento circular (cover) usado nos personagens jogáveis
+        ctx.save();
+        ctx.beginPath(); ctx.arc(cx, headY, 12, 0, Math.PI*2); ctx.clip();
+        let size = Math.min(faceImg.naturalWidth, faceImg.naturalHeight);
+        let sx = (faceImg.naturalWidth - size) / 2;
+        let sy = (faceImg.naturalHeight - size) / 2;
+        ctx.drawImage(faceImg, sx, sy, size, size, cx - 12, headY - 12, 24, 24);
+        ctx.restore();
+        ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(cx, headY, 12, 0, Math.PI*2); ctx.stroke();
+    } else {
+        ctx.fillStyle = ap.skinColor;
+        ctx.beginPath(); ctx.arc(cx, headY, 12, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = ap.hairColor;
+        ctx.beginPath(); ctx.arc(cx - 11, headY, 5, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx + 11, headY, 5, 0, Math.PI*2); ctx.fill();
+
+        ctx.fillStyle = ap.eyeColor; // Olhos
+        ctx.fillRect(cx - 7, headY - 3, 4, 3);
+        ctx.fillRect(cx + 3, headY - 3, 4, 3);
+
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 2; // Sobrancelha
+        ctx.beginPath(); ctx.moveTo(cx - 9, headY - 6); ctx.lineTo(cx - 3, headY - 4); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx + 9, headY - 6); ctx.lineTo(cx + 3, headY - 4); ctx.stroke();
+    }
 
     if(b.speechTimer > 0 && b.speechText) drawSpeechBubble(cx, headY - 70, b.speechText, '#ff1744');
 }
