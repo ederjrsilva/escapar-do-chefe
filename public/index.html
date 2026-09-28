@@ -20,6 +20,20 @@
         .photo-option { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; margin: 5px; cursor: pointer; border: 2px solid transparent; }
         .photo-option:hover { border-color: #38bdf8; }
 
+        /* Tela de seleção/votação do boss */
+        #boss-select { background: #0f172a; }
+        #boss-vote-status { color: #94a3b8; margin: 4px 0 14px; font-size: 14px; }
+        #boss-tie-warning { background: #78350f; border: 1px solid #facc15; color: #fde68a; padding: 10px 16px; border-radius: 8px; max-width: 520px; text-align: center; margin-bottom: 16px; font-size: 14px; font-weight: bold; }
+        #boss-grid { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; max-width: 900px; margin: 10px 20px; }
+        .boss-card { position: relative; width: 150px; background: #1e293b; border: 3px solid #334155; border-radius: 10px; overflow: hidden; cursor: pointer; transition: 0.15s; text-align: center; user-select: none; }
+        .boss-card:hover { border-color: #38bdf8; }
+        .boss-card.voted-mine { border-color: #4caf50; box-shadow: 0 0 14px rgba(76,175,80,0.55); }
+        .boss-face-wrap { width: 100%; height: 150px; background: #0f172a; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        .boss-face-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .boss-name-bar { padding: 8px 6px; font-weight: bold; font-size: 14px; background: #111827; }
+        .boss-vote-badge { position: absolute; bottom: 40px; right: 6px; background: #ef4444; color: #fff; font-weight: bold; font-size: 13px; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.5); }
+        .boss-voters { font-size: 10px; color: #94a3b8; padding: 0 6px 8px; min-height: 12px; line-height: 1.3; }
+
         button { padding: 10px 20px; font-size: 16px; font-weight: bold; cursor: pointer; border: none; border-radius: 5px; background: #38bdf8; color: #000; transition: 0.2s; }
         button:hover { background: #0284c7; color: #fff; }
         
@@ -88,6 +102,13 @@
         <button id="btn-start" style="margin-top:20px;">Aguardando jogadores...</button>
     </div>
 
+    <div id="boss-select" class="screen">
+        <h1>👹 Escolha o Boss</h1>
+        <p id="boss-vote-status">Aguardando votos...</p>
+        <div id="boss-tie-warning" class="hidden"></div>
+        <div id="boss-grid"></div>
+    </div>
+
     <!-- Modal para selecionar foto -->
     <div id="photo-modal">
         <h3>Escolha seu rosto</h3>
@@ -101,7 +122,10 @@
                 <div>OBJETIVO ATUAL:</div><div id="objective-text">Aguardando...</div>
                 <div style="font-size: 12px; color:#94a3b8; margin-top:5px;" id="hud-time">Tempo: 00:00</div>
             </div>
-            <div id="minimap-container"><canvas id="minimapCanvas" width="150" height="150"></canvas></div>
+            <div class="hud-box" style="text-align:right;">
+                <div id="boss-name-label" style="font-size:12px; color:#f87171; font-weight:bold;"></div>
+                <div id="minimap-container" style="margin-top:6px;"><canvas id="minimapCanvas" width="150" height="150"></canvas></div>
+            </div>
         </div>
         <div class="hud-bottom">
             <div class="hud-box status-bar-container">
