@@ -608,8 +608,9 @@ function drawBossMan(b) {
     let HR = hasPhoto ? 19 : 12;
     let headY = cy - 33 - HR;
 
-    // Cabelo de trás (só feminino): cabelo longo + coque
-    if(isFemale) {
+    // Cabelo de trás (só feminino SEM foto): cabelo longo + coque.
+    // Com foto, aparece apenas a foto (o cabelo já está na própria imagem).
+    if(isFemale && !hasPhoto) {
         ctx.fillStyle = ap.hairColor;
         ctx.beginPath(); ctx.ellipse(cx, headY + HR * 0.35, HR + 3, HR + 6, 0, 0, Math.PI*2); ctx.fill();
         ctx.beginPath(); ctx.arc(cx, headY - HR - 1, HR * 0.42, 0, Math.PI*2); ctx.fill();
