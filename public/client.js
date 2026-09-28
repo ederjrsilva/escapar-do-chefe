@@ -537,49 +537,97 @@ function drawBossMan(b) {
     // Aparência: cada boss tem sua própria paleta/foto (ver menu de seleção),
     // mas a movimentação/lógica desenhada aqui é sempre igual pra qualquer um.
     let ap = b.appearance || { skinColor: '#fca5a5', hairColor: '#d1d5db', eyeColor: '#ff0000', bodyColor: '#94a3b8' };
+    let isFemale = ap.gender === 'female';
 
     ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.ellipse(cx, cy, 16, 7, 0, 0, Math.PI*2); ctx.fill();
 
-    // Calça social escura (pernas) - mantém a cor original
-    ctx.strokeStyle = '#334155'; ctx.lineWidth = 8; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(cx, cy - 15); ctx.lineTo(cx - 5 + legSwing, cy); ctx.stroke(); 
-    ctx.beginPath(); ctx.moveTo(cx, cy - 15); ctx.lineTo(cx + 5 - legSwing, cy); ctx.stroke(); 
+    if(!isFemale) {
+        // ===== Corpo masculino (o "velho" original) =====
+        ctx.strokeStyle = '#334155'; ctx.lineWidth = 8; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(cx, cy - 15); ctx.lineTo(cx - 5 + legSwing, cy); ctx.stroke(); 
+        ctx.beginPath(); ctx.moveTo(cx, cy - 15); ctx.lineTo(cx + 5 - legSwing, cy); ctx.stroke(); 
 
-    // Camisa/roupa (torso e braços) na cor de corpo escolhida - contorno escuro por baixo pra não sumir no fundo claro do mapa
-    ctx.strokeStyle = ap.bodyColor; ctx.lineWidth = 10; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(cx, cy - 35); ctx.quadraticCurveTo(cx - 5, cy - 25, cx, cy - 15); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx, cy - 32); ctx.lineTo(cx - 15, cy - 25 - legSwing); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx, cy - 32); ctx.lineTo(cx + 15, cy - 25 + legSwing); ctx.stroke();
+        ctx.strokeStyle = ap.bodyColor; ctx.lineWidth = 10; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(cx, cy - 35); ctx.quadraticCurveTo(cx - 5, cy - 25, cx, cy - 15); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx, cy - 32); ctx.lineTo(cx - 15, cy - 25 - legSwing); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx, cy - 32); ctx.lineTo(cx + 15, cy - 25 + legSwing); ctx.stroke();
 
-    ctx.strokeStyle = '#f8fafc'; ctx.lineWidth = 6; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(cx, cy - 35); ctx.quadraticCurveTo(cx - 5, cy - 25, cx, cy - 15); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx, cy - 32); ctx.lineTo(cx - 15, cy - 25 - legSwing); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx, cy - 32); ctx.lineTo(cx + 15, cy - 25 + legSwing); ctx.stroke();
+        ctx.strokeStyle = '#f8fafc'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(cx, cy - 35); ctx.quadraticCurveTo(cx - 5, cy - 25, cx, cy - 15); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx, cy - 32); ctx.lineTo(cx - 15, cy - 25 - legSwing); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx, cy - 32); ctx.lineTo(cx + 15, cy - 25 + legSwing); ctx.stroke();
 
-    // Gravata
-    ctx.fillStyle = '#7f1d1d';
-    ctx.beginPath(); ctx.moveTo(cx - 3, cy - 34); ctx.lineTo(cx + 3, cy - 34); ctx.lineTo(cx + 2, cy - 18); ctx.lineTo(cx, cy - 14); ctx.lineTo(cx - 2, cy - 18); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#7f1d1d';
+        ctx.beginPath(); ctx.moveTo(cx - 3, cy - 34); ctx.lineTo(cx + 3, cy - 34); ctx.lineTo(cx + 2, cy - 18); ctx.lineTo(cx, cy - 14); ctx.lineTo(cx - 2, cy - 18); ctx.closePath(); ctx.fill();
+    } else {
+        // ===== Corpo feminino: roupa de senhora (vestido, colar e bolsa) =====
+        // Pernas (meia-calça na cor da pele) + sapatos
+        ctx.strokeStyle = ap.skinColor; ctx.lineWidth = 5; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(cx - 4, cy - 12); ctx.lineTo(cx - 5 + legSwing * 0.8, cy - 2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx + 4, cy - 12); ctx.lineTo(cx + 5 - legSwing * 0.8, cy - 2); ctx.stroke();
+        ctx.fillStyle = '#1f2937';
+        ctx.beginPath(); ctx.ellipse(cx - 5 + legSwing * 0.8, cy - 1, 4, 2.5, 0, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(cx + 5 - legSwing * 0.8, cy - 1, 4, 2.5, 0, 0, Math.PI*2); ctx.fill();
 
-    let headY = cy - 45;
+        // Braços (mangas curtas na cor do vestido, antebraço na cor da pele)
+        ctx.lineCap = 'round';
+        let lx = cx - 15, ly = cy - 25 - legSwing, rx = cx + 15, ry = cy - 25 + legSwing;
+        ctx.strokeStyle = ap.skinColor; ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.moveTo(cx, cy - 32); ctx.lineTo(lx, ly); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx, cy - 32); ctx.lineTo(rx, ry); ctx.stroke();
+        ctx.strokeStyle = ap.bodyColor; ctx.lineWidth = 7;
+        ctx.beginPath(); ctx.moveTo(cx - 3, cy - 32); ctx.lineTo(cx - 8, cy - 29 - legSwing * 0.4); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx + 3, cy - 32); ctx.lineTo(cx + 8, cy - 29 + legSwing * 0.4); ctx.stroke();
+
+        // Bolsinha de senhora na mão direita
+        ctx.strokeStyle = '#78350f'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(rx, ry + 2, 4, Math.PI, 0); ctx.stroke();
+        ctx.fillStyle = '#92400e'; ctx.fillRect(rx - 5, ry + 2, 10, 8);
+
+        // Vestido em A (do ombro até o joelho), com contorno pra destacar no mapa
+        ctx.fillStyle = ap.bodyColor; ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
+        ctx.beginPath(); ctx.moveTo(cx - 7, cy - 35); ctx.lineTo(cx + 7, cy - 35); ctx.lineTo(cx + 15, cy - 12); ctx.lineTo(cx - 15, cy - 12); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        // Cinto e barra do vestido
+        ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(cx - 6, cy - 26); ctx.lineTo(cx + 6, cy - 26); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx - 14, cy - 14); ctx.lineTo(cx + 14, cy - 14); ctx.stroke();
+
+        // Colar de pérolas
+        ctx.fillStyle = '#f8fafc';
+        for(let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.arc(cx + i * 2.6, cy - 34 + Math.abs(i) * -0.6 + 2.5, 1.3, 0, Math.PI*2); ctx.fill(); }
+    }
 
     // "O Caçador" (boss padrão/original) sempre mantém o rosto 100% procedural
-    // de sempre em jogo — a foto dele (ver appearance.facePhoto) é usada só
-    // no card do menu de seleção, não substitui a cara dele durante a partida.
+    // de sempre em jogo — a foto dele é usada só no card do menu de seleção.
     let facePhotoKey = (ap.facePhoto && b.bossId !== 'default') ? ('boss:' + ap.facePhoto) : null;
     let faceImg = facePhotoKey ? imageCache[facePhotoKey] : null;
+    let hasPhoto = !!(faceImg && faceImg.complete && faceImg.naturalWidth > 0);
 
-    if(faceImg && faceImg.complete && faceImg.naturalWidth > 0) {
+    // Cabeça maior quando é foto (pra enxergar melhor o rosto); sem foto, tamanho original.
+    let HR = hasPhoto ? 19 : 12;
+    let headY = cy - 33 - HR;
+
+    // Cabelo de trás (só feminino): cabelo longo + coque
+    if(isFemale) {
+        ctx.fillStyle = ap.hairColor;
+        ctx.beginPath(); ctx.ellipse(cx, headY + HR * 0.35, HR + 3, HR + 6, 0, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx, headY - HR - 1, HR * 0.42, 0, Math.PI*2); ctx.fill();
+    }
+
+    if(hasPhoto) {
         // Mesmo enquadramento circular (cover) usado nos personagens jogáveis
         ctx.save();
-        ctx.beginPath(); ctx.arc(cx, headY, 12, 0, Math.PI*2); ctx.clip();
+        ctx.beginPath(); ctx.arc(cx, headY, HR, 0, Math.PI*2); ctx.clip();
         let size = Math.min(faceImg.naturalWidth, faceImg.naturalHeight);
         let sx = (faceImg.naturalWidth - size) / 2;
         let sy = (faceImg.naturalHeight - size) / 2;
-        ctx.drawImage(faceImg, sx, sy, size, size, cx - 12, headY - 12, 24, 24);
+        ctx.drawImage(faceImg, sx, sy, size, size, cx - HR, headY - HR, HR * 2, HR * 2);
         ctx.restore();
         ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(cx, headY, 12, 0, Math.PI*2); ctx.stroke();
-    } else {
+        ctx.beginPath(); ctx.arc(cx, headY, HR, 0, Math.PI*2); ctx.stroke();
+    } else if(!isFemale) {
+        // Rosto masculino procedural (idêntico ao original)
         ctx.fillStyle = ap.skinColor;
         ctx.beginPath(); ctx.arc(cx, headY, 12, 0, Math.PI*2); ctx.fill();
         ctx.fillStyle = ap.hairColor;
@@ -593,6 +641,24 @@ function drawBossMan(b) {
         ctx.strokeStyle = '#000'; ctx.lineWidth = 2; // Sobrancelha
         ctx.beginPath(); ctx.moveTo(cx - 9, headY - 6); ctx.lineTo(cx - 3, headY - 4); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(cx + 9, headY - 6); ctx.lineTo(cx + 3, headY - 4); ctx.stroke();
+    } else {
+        // Rosto feminino procedural: franja, olhos com cílios, batom
+        ctx.fillStyle = ap.skinColor;
+        ctx.beginPath(); ctx.arc(cx, headY, 12, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = ap.hairColor; // franja
+        ctx.beginPath(); ctx.arc(cx, headY, 12.5, Math.PI * 1.08, Math.PI * 1.92); ctx.lineTo(cx, headY - 3); ctx.closePath(); ctx.fill();
+
+        ctx.fillStyle = ap.eyeColor;
+        ctx.beginPath(); ctx.ellipse(cx - 5, headY, 2.4, 2, 0, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(cx + 5, headY, 2.4, 2, 0, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 1.2; // cílios
+        ctx.beginPath(); ctx.moveTo(cx - 8, headY - 1); ctx.lineTo(cx - 9.5, headY - 3); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx + 8, headY - 1); ctx.lineTo(cx + 9.5, headY - 3); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx - 8, headY - 4); ctx.lineTo(cx - 3, headY - 4.5); ctx.stroke(); // sobrancelhas finas
+        ctx.beginPath(); ctx.moveTo(cx + 8, headY - 4); ctx.lineTo(cx + 3, headY - 4.5); ctx.stroke();
+
+        ctx.fillStyle = ap.lipColor || '#be123c'; // batom
+        ctx.beginPath(); ctx.ellipse(cx, headY + 6, 3.2, 1.8, 0, 0, Math.PI*2); ctx.fill();
     }
 
     if(b.speechTimer > 0 && b.speechText) drawSpeechBubble(cx, headY - 70, b.speechText, '#ff1744');
