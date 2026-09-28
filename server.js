@@ -183,8 +183,8 @@ const DEFAULT_BOSS = {
     name: 'O Caçador',
     isDefault: true,
     appearance: {
-        skinColor: '#fca5a5', hairColor: '#d1d5db', eyeColor: '#ff0000', bodyColor: '#94a3b8',
-        facePhoto: 'boss-default-face.png'
+        gender: 'male', skinColor: '#fca5a5', hairColor: '#d1d5db', eyeColor: '#ff0000', bodyColor: '#94a3b8', lipColor: '#c2410c',
+        facePhoto: 'bosses/default-face.png'
     },
     phrasesPatrol: [...BOSS_PATROL_PHRASES],
     phraseSpot: "Te achei, nó cego!",
@@ -294,7 +294,7 @@ function bossesListHtml(senha, message) {
 
 function bossFormHtml(senha, boss) {
     let isEdit = !!boss;
-    let b = boss || { id: '', name: '', appearance: { skinColor: '#fca5a5', hairColor: '#334155', eyeColor: '#ff0000', bodyColor: '#94a3b8', facePhoto: null }, phrasesPatrol: [], phraseSpot: '', phraseCatch: '' };
+    let b = boss || { id: '', name: '', appearance: { gender: 'male', skinColor: '#fca5a5', hairColor: '#334155', eyeColor: '#ff0000', bodyColor: '#94a3b8', lipColor: '#be123c', facePhoto: null }, phrasesPatrol: [], phraseSpot: '', phraseCatch: '' };
     let action = isEdit ? `/admin/bosses/edit/${b.id}` : '/admin/bosses/create';
     let currentPhotoHtml = b.appearance.facePhoto
         ? `<div style="margin:10px 0;"><img src="/fotos/${b.appearance.facePhoto}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid #475569;"><div style="font-size:11px;color:#94a3b8;">Foto atual (envie outra abaixo pra substituir)</div></div>`
@@ -316,6 +316,11 @@ function bossFormHtml(senha, boss) {
     button { margin-top:20px; padding:11px 22px; font-size:15px; font-weight:bold; border:none; border-radius:8px; cursor:pointer; background:#38bdf8; color:#000; }
     button:hover { background:#0284c7; color:#fff; }
     a { color:#94a3b8; font-size:13px; }
+    .gender-switch { display:flex; background:#0f172a; border:1px solid #475569; border-radius:999px; padding:3px; width:max-content; }
+    .gender-switch input { display:none; }
+    .gender-switch label { margin:0; padding:7px 20px; border-radius:999px; cursor:pointer; color:#94a3b8; font-size:14px; font-weight:bold; }
+    .gender-switch input:checked + label { background:#38bdf8; color:#000; }
+    #g-female:checked + label { background:#f472b6; }
 </style></head>
 <body>
     <div class="card">
@@ -325,11 +330,21 @@ function bossFormHtml(senha, boss) {
             <label>Nome do boss</label>
             <input type="text" name="name" maxlength="30" required value="${b.name || ''}" placeholder="Ex: A Supervisora">
 
+            <label>Qual o gênero do boss?</label>
+            <div class="gender-switch">
+                <input type="radio" id="g-male" name="gender" value="male" ${b.appearance.gender !== 'female' ? 'checked' : ''} onchange="updGender()">
+                <label for="g-male">Masculino</label>
+                <input type="radio" id="g-female" name="gender" value="female" ${b.appearance.gender === 'female' ? 'checked' : ''} onchange="updGender()">
+                <label for="g-female">Feminino</label>
+            </div>
+            <p id="gender-hint" style="font-size:12px;color:#94a3b8;"></p>
+
             <div class="row">
                 <div><label>Cor da pele</label><input type="color" name="skinColor" value="${b.appearance.skinColor}"></div>
                 <div><label>Cor do cabelo</label><input type="color" name="hairColor" value="${b.appearance.hairColor}"></div>
                 <div><label>Cor dos olhos</label><input type="color" name="eyeColor" value="${b.appearance.eyeColor}"></div>
-                <div><label>Cor do corpo/roupa</label><input type="color" name="bodyColor" value="${b.appearance.bodyColor}"></div>
+                <div><label id="body-label">Cor do corpo/roupa</label><input type="color" name="bodyColor" value="${b.appearance.bodyColor}"></div>
+                <div id="lip-wrap" style="display:none;"><label>Cor do batom</label><input type="color" name="lipColor" value="${b.appearance.lipColor || '#be123c'}"></div>
             </div>
             <p style="font-size:12px;color:#94a3b8;">As cores acima só valem se você <b>não</b> enviar uma foto de rosto — a foto sempre tem prioridade sobre a cor da pele/olhos.</p>
 
@@ -353,6 +368,17 @@ Sei que estão aqui...">${(b.phrasesPatrol || []).join('\n')}</textarea>
             </div>
         </form>
     </div>
+    <script>
+        function updGender() {
+            var f = document.getElementById('g-female').checked;
+            document.getElementById('lip-wrap').style.display = f ? 'block' : 'none';
+            document.getElementById('body-label').innerText = f ? 'Cor do vestido' : 'Cor do corpo/roupa';
+            document.getElementById('gender-hint').innerText = f
+                ? 'Feminino: corpo de senhora (vestido + colar), cabelo longo/coque e batom personalizáveis.'
+                : 'Masculino: mantém o corpo do velho (camisa social + gravata) e o rosto personalizável.';
+        }
+        updGender();
+    </script>
 </body></html>`;
 }
 
@@ -384,10 +410,12 @@ app.post('/admin/bosses/create', (req, res, next) => bossPhotoUpload.single('fac
         name: String(req.body.name || '').trim().slice(0, 30) || 'Boss sem nome',
         isDefault: false,
         appearance: {
+            gender: req.body.gender === 'female' ? 'female' : 'male',
             skinColor: req.body.skinColor || '#fca5a5',
             hairColor: req.body.hairColor || '#334155',
             eyeColor: req.body.eyeColor || '#ff0000',
             bodyColor: req.body.bodyColor || '#94a3b8',
+            lipColor: req.body.lipColor || '#be123c',
             facePhoto: req.file ? `bosses/${req.file.filename}` : null
         },
         phrasesPatrol: phrasesPatrol.length ? phrasesPatrol : ['Cadê vocês?'],
@@ -411,6 +439,8 @@ app.post('/admin/bosses/edit/:id', (req, res, next) => bossPhotoUpload.single('f
     let phrasesPatrol = String(req.body.phrasesPatrol || '').split('\n').map(s => s.trim()).filter(Boolean);
     b.name = String(req.body.name || '').trim().slice(0, 30) || b.name;
     b.appearance = {
+        gender: req.body.gender === 'female' ? 'female' : 'male',
+        lipColor: req.body.lipColor || b.appearance.lipColor || '#be123c',
         skinColor: req.body.skinColor || b.appearance.skinColor,
         hairColor: req.body.hairColor || b.appearance.hairColor,
         eyeColor: req.body.eyeColor || b.appearance.eyeColor,
@@ -607,7 +637,7 @@ io.on('connection', (socket) => {
         if (fs.existsSync(fotosDir)) {
             // Arquivos começando com "npc-" são reservados a personagens fixos
             // (ex: o trabalhador ambiente) e não aparecem como opção de avatar.
-            photoFiles = fs.readdirSync(fotosDir).filter(file => /\.(jpg|jpeg|png|webp)$/i.test(file) && !/^npc-/i.test(file));
+            photoFiles = fs.readdirSync(fotosDir).filter(file => /\.(jpg|jpeg|png|webp)$/i.test(file) && !/^(npc-|boss)/i.test(file));
         }
     } catch (e) { console.log("Erro ao ler pasta de fotos."); }
     socket.emit('photoList', photoFiles);
