@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const fs = require('fs');
 const path = require('path');
+const multer = require('multer');
 
 const app = express();
 const server = http.createServer(app);
@@ -80,6 +81,9 @@ function adminPageHtml(senha) {
             <input type="hidden" name="senha" value="${senha}">
             <button type="submit">${gameEnabled ? 'Desligar jogo' : 'Ligar jogo'}</button>
         </form>
+        <div style="margin-top:20px; border-top:1px solid #334155; padding-top:15px;">
+            <a href="/admin/bosses?senha=${encodeURIComponent(senha)}" style="color:#38bdf8; font-weight:bold; text-decoration:none;">🧑‍💼 Gerenciar Bosses personalizados →</a>
+        </div>
     </div>
 </body></html>`;
 }
@@ -160,6 +164,286 @@ const NPC_PHRASES = ["Nem eu nem tu", "Pode vir, meu patrão", "Me dá um real"]
 const NPC_HOLD_PHRASES = ["Eu aceito Pix", "Me paga aí que eu solto", "Não vou te soltar", "Rapaz, eu tava doente", "Nem eu nem tu"];
 const TOTAL_OBJECTIVES = 20;
 
+// ===== Sistema de Bosses personalizáveis =====
+// A movimentação, velocidade, IA de perseguição, obstáculos etc. do chefe são
+// SEMPRE as mesmas (ver a lógica de PATROL/CHASE/SEARCH mais abaixo) — o que
+// muda de um boss pro outro é só a aparência (visual) e as frases que ele fala.
+const MAX_BOSSES = 6;
+const BOSSES_DIR = path.join(__dirname, 'fotos', 'bosses');
+const BOSSES_DATA_FILE = path.join(__dirname, 'bosses-data.json');
+try { if (!fs.existsSync(BOSSES_DIR)) fs.mkdirSync(BOSSES_DIR, { recursive: true }); } catch (e) { console.error('[bosses] não foi possível criar pasta de fotos/bosses:', e); }
+
+// "O Caçador" é o boss atual/original. Fica sempre fixo como o primeiro card,
+// com a lógica e frases 100% originais. A foto abaixo é só o retrato dele
+// usado no CARD de seleção — durante a partida ele continua sendo desenhado
+// do jeito procedural de sempre (ver client.js: drawBossMan trata bossId
+// 'default' como caso especial), então visualmente em jogo nada muda.
+const DEFAULT_BOSS = {
+    id: 'default',
+    name: 'O Caçador',
+    isDefault: true,
+    appearance: {
+        skinColor: '#fca5a5', hairColor: '#d1d5db', eyeColor: '#ff0000', bodyColor: '#94a3b8',
+        facePhoto: 'boss-default-face.png'
+    },
+    phrasesPatrol: [...BOSS_PATROL_PHRASES],
+    phraseSpot: "Te achei, nó cego!",
+    phraseCatch: "Te peguei, nó cego!"
+};
+
+function loadBosses() {
+    try {
+        if (fs.existsSync(BOSSES_DATA_FILE)) {
+            let saved = JSON.parse(fs.readFileSync(BOSSES_DATA_FILE, 'utf8'));
+            if (Array.isArray(saved)) return [DEFAULT_BOSS, ...saved.filter(b => b && b.id && b.id !== 'default')];
+        }
+    } catch (e) { console.error('[bosses] erro ao carregar bosses-data.json, usando só o padrão:', e); }
+    return [DEFAULT_BOSS];
+}
+function saveBosses() {
+    try { fs.writeFileSync(BOSSES_DATA_FILE, JSON.stringify(bosses.filter(b => !b.isDefault), null, 2)); }
+    catch (e) { console.error('[bosses] erro ao salvar bosses-data.json:', e); }
+}
+
+let bosses = loadBosses();
+let activeBossDef = DEFAULT_BOSS; // boss em uso na partida atual (ou o padrão, fora de partida)
+
+// Lista "pública" enviada aos clientes (lobby / seleção / cards) — mesmos
+// campos que o admin cadastra, sem nada sensível.
+function publicBossList() {
+    return bosses.map(b => ({ id: b.id, name: b.name, appearance: b.appearance, isDefault: !!b.isDefault }));
+}
+
+const bossPhotoUpload = multer({
+    storage: multer.diskStorage({
+        destination: (req, file, cb) => cb(null, BOSSES_DIR),
+        filename: (req, file, cb) => {
+            let ext = (path.extname(file.originalname || '').toLowerCase().match(/\.(jpg|jpeg|png|webp)$/) || ['.jpg'])[0];
+            cb(null, `boss-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`);
+        }
+    }),
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (/\.(jpg|jpeg|png|webp)$/i.test(file.originalname || '')) cb(null, true);
+        else cb(new Error('Formato de imagem inválido (use jpg, jpeg, png ou webp).'));
+    }
+});
+
+function requireAdmin(req, res, next) {
+    const senha = (req.query && req.query.senha) || (req.body && req.body.senha) || '';
+    if (senha !== ADMIN_PASSWORD) return res.status(403).send('Senha incorreta. <a href="/admin" style="color:#38bdf8;">Voltar</a>');
+    req.adminSenha = senha;
+    next();
+}
+
+function bossCardPreviewHtml(b) {
+    let img = b.appearance.facePhoto
+        ? `<img src="/fotos/${b.appearance.facePhoto}" style="width:100%;height:100%;object-fit:cover;">`
+        : `<div style="width:100%;height:100%;background:${b.appearance.skinColor};position:relative;">
+             <div style="position:absolute;top:38%;left:20%;width:12%;height:10%;background:${b.appearance.eyeColor};"></div>
+             <div style="position:absolute;top:38%;right:20%;width:12%;height:10%;background:${b.appearance.eyeColor};"></div>
+           </div>`;
+    return `<div style="width:90px;height:90px;border-radius:8px;overflow:hidden;background:#0f172a;border:2px solid #475569;">${img}</div>`;
+}
+
+function bossesListHtml(senha, message) {
+    let podeAdicionar = bosses.length < MAX_BOSSES;
+    let cardsHtml = bosses.map(b => `
+        <div style="background:#1e293b; border:2px solid #334155; border-radius:10px; padding:14px; display:flex; gap:14px; align-items:center; width:420px;">
+            ${bossCardPreviewHtml(b)}
+            <div style="flex:1; text-align:left;">
+                <div style="font-weight:bold; font-size:16px;">${b.name} ${b.isDefault ? '<span style="color:#facc15;font-size:11px;">(padrão)</span>' : ''}</div>
+                <div style="font-size:12px; color:#94a3b8; margin-top:4px;">${(b.isDefault ? b.phrasesPatrol : b.phrasesPatrol).length} frase(s) de patrulha</div>
+                <div style="margin-top:10px; display:flex; gap:8px;">
+                    ${b.isDefault ? '' : `
+                        <a href="/admin/bosses/edit/${b.id}?senha=${encodeURIComponent(senha)}"><button type="button">Editar</button></a>
+                        <form method="POST" action="/admin/bosses/delete/${b.id}" onsubmit="return confirm('Excluir este boss?');">
+                            <input type="hidden" name="senha" value="${senha}">
+                            <button type="submit" style="background:#ef4444;">Excluir</button>
+                        </form>
+                    `}
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    return `<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bosses - Hospital Escape</title>
+<style>
+    body { margin:0; min-height:100vh; background:#0f172a; color:#fff; font-family:'Roboto',sans-serif; padding:30px; box-sizing:border-box; }
+    h1 { font-size:22px; } a { color:#38bdf8; }
+    button { padding:8px 14px; font-size:14px; font-weight:bold; border:none; border-radius:6px; cursor:pointer; background:#38bdf8; color:#000; }
+    button:hover { background:#0284c7; color:#fff; }
+    .list { display:flex; flex-direction:column; gap:14px; margin:20px 0; }
+    .msg { background:#78350f; border:1px solid #facc15; color:#fde68a; padding:10px 14px; border-radius:8px; margin-bottom:15px; max-width:460px; }
+    .top-bar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; }
+</style></head>
+<body>
+    <div class="top-bar">
+        <h1>🧑‍💼 Bosses personalizados (${bosses.length}/${MAX_BOSSES})</h1>
+        <div><a href="/admin?senha=${encodeURIComponent(senha)}">← Voltar ao painel</a></div>
+    </div>
+    ${message ? `<div class="msg">${message}</div>` : ''}
+    <div class="list">${cardsHtml}</div>
+    ${podeAdicionar
+        ? `<a href="/admin/bosses/new?senha=${encodeURIComponent(senha)}"><button type="button">+ Criar novo boss</button></a>`
+        : `<div class="msg">Limite de ${MAX_BOSSES} bosses atingido! Para adicionar um novo, edite ou exclua algum já existente.</div>`}
+</body></html>`;
+}
+
+function bossFormHtml(senha, boss) {
+    let isEdit = !!boss;
+    let b = boss || { id: '', name: '', appearance: { skinColor: '#fca5a5', hairColor: '#334155', eyeColor: '#ff0000', bodyColor: '#94a3b8', facePhoto: null }, phrasesPatrol: [], phraseSpot: '', phraseCatch: '' };
+    let action = isEdit ? `/admin/bosses/edit/${b.id}` : '/admin/bosses/create';
+    let currentPhotoHtml = b.appearance.facePhoto
+        ? `<div style="margin:10px 0;"><img src="/fotos/${b.appearance.facePhoto}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid #475569;"><div style="font-size:11px;color:#94a3b8;">Foto atual (envie outra abaixo pra substituir)</div></div>`
+        : '';
+
+    return `<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${isEdit ? 'Editar' : 'Novo'} Boss - Hospital Escape</title>
+<style>
+    body { margin:0; min-height:100vh; background:#0f172a; color:#fff; font-family:'Roboto',sans-serif; padding:30px; box-sizing:border-box; display:flex; justify-content:center; }
+    .card { background:#1e293b; padding:26px 30px; border-radius:12px; border:2px solid #334155; max-width:420px; width:100%; }
+    h1 { font-size:19px; margin-top:0; }
+    label { display:block; font-size:13px; color:#94a3b8; margin:14px 0 5px; }
+    input[type=text], textarea { width:100%; box-sizing:border-box; padding:9px; border-radius:6px; border:1px solid #475569; background:#0f172a; color:#fff; font-size:14px; }
+    input[type=color] { width:60px; height:36px; border:none; border-radius:6px; cursor:pointer; vertical-align:middle; }
+    textarea { min-height:90px; font-family:inherit; }
+    .row { display:flex; gap:16px; flex-wrap:wrap; }
+    .row > div { flex:1; min-width:120px; }
+    button { margin-top:20px; padding:11px 22px; font-size:15px; font-weight:bold; border:none; border-radius:8px; cursor:pointer; background:#38bdf8; color:#000; }
+    button:hover { background:#0284c7; color:#fff; }
+    a { color:#94a3b8; font-size:13px; }
+</style></head>
+<body>
+    <div class="card">
+        <h1>${isEdit ? '✏️ Editar' : '➕ Novo'} Boss</h1>
+        <form method="POST" action="${action}" enctype="multipart/form-data">
+            <input type="hidden" name="senha" value="${senha}">
+            <label>Nome do boss</label>
+            <input type="text" name="name" maxlength="30" required value="${b.name || ''}" placeholder="Ex: A Supervisora">
+
+            <div class="row">
+                <div><label>Cor da pele</label><input type="color" name="skinColor" value="${b.appearance.skinColor}"></div>
+                <div><label>Cor do cabelo</label><input type="color" name="hairColor" value="${b.appearance.hairColor}"></div>
+                <div><label>Cor dos olhos</label><input type="color" name="eyeColor" value="${b.appearance.eyeColor}"></div>
+                <div><label>Cor do corpo/roupa</label><input type="color" name="bodyColor" value="${b.appearance.bodyColor}"></div>
+            </div>
+            <p style="font-size:12px;color:#94a3b8;">As cores acima só valem se você <b>não</b> enviar uma foto de rosto — a foto sempre tem prioridade sobre a cor da pele/olhos.</p>
+
+            ${currentPhotoHtml}
+            <label>Foto real do rosto (opcional — mesmo enquadramento circular usado nos personagens jogáveis)</label>
+            <input type="file" name="facePhoto" accept=".jpg,.jpeg,.png,.webp">
+
+            <label>Frases de patrulha (uma por linha — ditas aleatoriamente enquanto ele ronda)</label>
+            <textarea name="phrasesPatrol" placeholder="Cadê vocês?
+Sei que estão aqui...">${(b.phrasesPatrol || []).join('\n')}</textarea>
+
+            <label>Frase ao avistar alguém</label>
+            <input type="text" name="phraseSpot" maxlength="60" value="${b.phraseSpot || ''}" placeholder="Te achei!">
+
+            <label>Frase ao capturar alguém</label>
+            <input type="text" name="phraseCatch" maxlength="60" value="${b.phraseCatch || ''}" placeholder="Te peguei!">
+
+            <div style="margin-top:20px;">
+                <button type="submit">${isEdit ? 'Salvar alterações' : 'Criar boss'}</button>
+                <a href="/admin/bosses?senha=${encodeURIComponent(senha)}" style="margin-left:14px;">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</body></html>`;
+}
+
+app.get('/admin/bosses', requireAdmin, (req, res) => res.send(bossesListHtml(req.adminSenha)));
+
+app.get('/admin/bosses/new', requireAdmin, (req, res) => {
+    if (bosses.length >= MAX_BOSSES) return res.send(bossesListHtml(req.adminSenha, `Limite de ${MAX_BOSSES} bosses atingido! Edite ou exclua algum já existente antes de criar um novo.`));
+    res.send(bossFormHtml(req.adminSenha, null));
+});
+
+app.get('/admin/bosses/edit/:id', requireAdmin, (req, res) => {
+    let b = bosses.find(x => x.id === req.params.id && !x.isDefault);
+    if (!b) return res.redirect('/admin/bosses?senha=' + encodeURIComponent(req.adminSenha));
+    res.send(bossFormHtml(req.adminSenha, b));
+});
+
+app.post('/admin/bosses/create', (req, res, next) => bossPhotoUpload.single('facePhoto')(req, res, err => {
+    if (err) return res.status(400).send(`Erro no upload: ${err.message} <a href="javascript:history.back()">Voltar</a>`);
+    next();
+}), requireAdmin, (req, res) => {
+    const senha = req.adminSenha;
+    if (bosses.length >= MAX_BOSSES) {
+        if (req.file) fs.unlink(req.file.path, () => {});
+        return res.send(bossesListHtml(senha, `Limite de ${MAX_BOSSES} bosses atingido! Edite ou exclua algum já existente antes de criar um novo.`));
+    }
+    let phrasesPatrol = String(req.body.phrasesPatrol || '').split('\n').map(s => s.trim()).filter(Boolean);
+    let newBoss = {
+        id: 'b' + Date.now() + Math.round(Math.random() * 1000),
+        name: String(req.body.name || '').trim().slice(0, 30) || 'Boss sem nome',
+        isDefault: false,
+        appearance: {
+            skinColor: req.body.skinColor || '#fca5a5',
+            hairColor: req.body.hairColor || '#334155',
+            eyeColor: req.body.eyeColor || '#ff0000',
+            bodyColor: req.body.bodyColor || '#94a3b8',
+            facePhoto: req.file ? `bosses/${req.file.filename}` : null
+        },
+        phrasesPatrol: phrasesPatrol.length ? phrasesPatrol : ['Cadê vocês?'],
+        phraseSpot: String(req.body.phraseSpot || '').trim() || 'Te achei!',
+        phraseCatch: String(req.body.phraseCatch || '').trim() || 'Te peguei!'
+    };
+    bosses.push(newBoss);
+    saveBosses();
+    io.emit('bossesUpdated', publicBossList());
+    res.redirect('/admin/bosses?senha=' + encodeURIComponent(senha));
+});
+
+app.post('/admin/bosses/edit/:id', (req, res, next) => bossPhotoUpload.single('facePhoto')(req, res, err => {
+    if (err) return res.status(400).send(`Erro no upload: ${err.message} <a href="javascript:history.back()">Voltar</a>`);
+    next();
+}), requireAdmin, (req, res) => {
+    const senha = req.adminSenha;
+    let b = bosses.find(x => x.id === req.params.id && !x.isDefault);
+    if (!b) { if (req.file) fs.unlink(req.file.path, () => {}); return res.redirect('/admin/bosses?senha=' + encodeURIComponent(senha)); }
+
+    let phrasesPatrol = String(req.body.phrasesPatrol || '').split('\n').map(s => s.trim()).filter(Boolean);
+    b.name = String(req.body.name || '').trim().slice(0, 30) || b.name;
+    b.appearance = {
+        skinColor: req.body.skinColor || b.appearance.skinColor,
+        hairColor: req.body.hairColor || b.appearance.hairColor,
+        eyeColor: req.body.eyeColor || b.appearance.eyeColor,
+        bodyColor: req.body.bodyColor || b.appearance.bodyColor,
+        facePhoto: b.appearance.facePhoto
+    };
+    if (req.file) {
+        let oldPhoto = b.appearance.facePhoto;
+        b.appearance.facePhoto = `bosses/${req.file.filename}`;
+        if (oldPhoto) { let oldPath = path.join(__dirname, 'fotos', oldPhoto); fs.unlink(oldPath, () => {}); }
+    }
+    b.phrasesPatrol = phrasesPatrol.length ? phrasesPatrol : b.phrasesPatrol;
+    b.phraseSpot = String(req.body.phraseSpot || '').trim() || b.phraseSpot;
+    b.phraseCatch = String(req.body.phraseCatch || '').trim() || b.phraseCatch;
+
+    saveBosses();
+    io.emit('bossesUpdated', publicBossList());
+    res.redirect('/admin/bosses?senha=' + encodeURIComponent(senha));
+});
+
+app.post('/admin/bosses/delete/:id', express.urlencoded({ extended: true }), requireAdmin, (req, res) => {
+    const senha = req.adminSenha;
+    let idx = bosses.findIndex(x => x.id === req.params.id && !x.isDefault);
+    if (idx !== -1) {
+        let removed = bosses[idx];
+        if (removed.appearance.facePhoto) { let p2 = path.join(__dirname, 'fotos', removed.appearance.facePhoto); fs.unlink(p2, () => {}); }
+        bosses.splice(idx, 1);
+        saveBosses();
+        io.emit('bossesUpdated', publicBossList());
+    }
+    res.redirect('/admin/bosses?senha=' + encodeURIComponent(senha));
+});
+
 // Pontos usados pra navegação do chefe: centro de cada setor + centro de cada
 // abertura/porta do mapa. Servem tanto pra ele explorar tudo aleatoriamente
 // (PATROL) quanto pra achar o caminho até uma abertura quando alguém está
@@ -226,11 +510,16 @@ function pickRandomPatrolPoint(exclude) {
 
 let gameManager = { level: 1, globalEvent: 'NONE', eventTimer: 0, objectivesCollected: 0, totalObjectives: TOTAL_OBJECTIVES, activeItem: null, speakCooldown: 300 };
 
-function createBoss() {
+// bossDef: qual boss (aparência + nome) representar nesse round. A lógica de
+// movimentação abaixo (PATROL/CHASE/SEARCH, velocidade, colisão com paredes)
+// é sempre a mesma pra qualquer boss — só a aparência/frases mudam.
+function createBoss(bossDef) {
+    let def = bossDef || DEFAULT_BOSS;
     return {
         x: MAP_W/2, y: MAP_H/2, w: 32, h: 32, state: 'PATROL', angle: 0, targetId: null, lastKnownPos: null,
         patrolTarget: null, navWaypoint: null, progressCheck: null,
-        prevX: 0, prevY: 0, stuckTimer: 0, isMoving: false, speechText: null, speechTimer: 0, role: 'boss'
+        prevX: 0, prevY: 0, stuckTimer: 0, isMoving: false, speechText: null, speechTimer: 0, role: 'boss',
+        bossId: def.id, name: def.name, appearance: def.appearance
     };
 }
 
@@ -264,6 +553,50 @@ function dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
 
 const colors = ['#00bcd4', '#e91e63', '#ff9800', '#9c27b0', '#8bc34a', '#ffeb3b'];
 
+// socket.id -> bossId votado. Zerado a cada nova votação/reset.
+let bossVotes = {};
+
+function startBossVote() {
+    gameState = 'BOSS_VOTE';
+    bossVotes = {};
+    io.emit('bossVoteStart', publicBossList());
+}
+
+function broadcastVoteState() {
+    let pList = Object.values(players);
+    let tally = {};
+    bosses.forEach(b => tally[b.id] = { count: 0, voters: [] });
+    Object.entries(bossVotes).forEach(([sid, bossId]) => {
+        if (!tally[bossId]) return;
+        tally[bossId].count++;
+        let p = players[sid];
+        if (p) tally[bossId].voters.push(p.name);
+    });
+    io.emit('bossVoteUpdate', { tally, votedCount: Object.keys(bossVotes).length, totalPlayers: pList.length });
+
+    if (pList.length > 0 && Object.keys(bossVotes).length === pList.length) {
+        let maxCount = Math.max(...Object.values(tally).map(t => t.count));
+        let topBossIds = Object.entries(tally).filter(([id, t]) => t.count === maxCount && t.count > 0).map(([id]) => id);
+        if (topBossIds.length > 1) {
+            // Empate: não inicia, avisa todo mundo e espera alguém trocar o voto.
+            io.emit('bossVoteTie', topBossIds.map(id => (bosses.find(b => b.id === id) || {}).name).filter(Boolean));
+        } else if (topBossIds.length === 1) {
+            beginMatchWithBoss(topBossIds[0]);
+        }
+    }
+}
+
+function beginMatchWithBoss(bossId) {
+    activeBossDef = bosses.find(b => b.id === bossId) || DEFAULT_BOSS;
+    gameState = 'PLAYING'; startTime = Date.now();
+    boss = createBoss(activeBossDef);
+    gameManager.level = 1; gameManager.objectivesCollected = 0; gameManager.speakCooldown = 300;
+    npc.x = 1400; npc.y = 1450; npc.wpIndex = 0; npc.speechText = null; npc.speechTimer = 0; npc.speakCooldown = 150; npc.holdingId = null; npc.holdTimer = 0; npc.grabCooldown = 0;
+    spawnNextObjective();
+    io.emit('bossAlert', `Colete os ${gameManager.totalObjectives} itens espalhados e fuja do chefe!`);
+    io.emit('gameStart', map);
+}
+
 io.on('connection', (socket) => {
     if(!gameEnabled) { socket.disconnect(); return; }
     if(gameState !== 'LOBBY') { socket.emit('gameFull'); socket.disconnect(); return; }
@@ -278,6 +611,7 @@ io.on('connection', (socket) => {
         }
     } catch (e) { console.log("Erro ao ler pasta de fotos."); }
     socket.emit('photoList', photoFiles);
+    socket.emit('bossesList', publicBossList());
 
     players[socket.id] = {
         id: socket.id, ready: false, name: `Jogador ${nextPlayerNumber}`, color: colors[(nextPlayerNumber-1) % colors.length], avatar: null,
@@ -296,12 +630,22 @@ io.on('connection', (socket) => {
         let p = players[socket.id];
         if(!p) return;
         if(isReady && !p.avatar) {
-            socket.emit('errorMsg', 'Escolha uma foto antes de ficar pronto!');
+            socket.emit('errorMsg', 'Escolha uma foto antes de avançar!');
             return;
         }
         p.ready = isReady;
         io.emit('lobbyUpdate', Object.values(players));
         checkGameStart();
+    });
+
+    // Votação do boss: cada jogador clica no card do boss que quer, podendo
+    // trocar o voto livremente até a partida começar. Quando todos votarem,
+    // ou o boss mais votado assume, ou (em empate) espera alguém mudar de voto.
+    socket.on('voteBoss', (bossId) => {
+        if (gameState !== 'BOSS_VOTE' || !players[socket.id]) return;
+        if (!bosses.find(b => b.id === bossId)) return;
+        bossVotes[socket.id] = bossId;
+        broadcastVoteState();
     });
 
     socket.on('input', (inputs) => { if(players[socket.id] && gameState === 'PLAYING' && !players[socket.id].isDead) players[socket.id].inputs = inputs; });
@@ -324,7 +668,16 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('disconnect', () => { delete players[socket.id]; io.emit('lobbyUpdate', Object.values(players)); if(Object.keys(players).length === 0) resetGame(); });
+    socket.on('disconnect', () => {
+        delete players[socket.id];
+        delete bossVotes[socket.id];
+        // Só reemite o lobby-grid se ainda estivermos no lobby — durante a
+        // votação/partida isso é tratado por broadcastVoteState/syncState,
+        // pra não jogar todo mundo de volta pra tela de lobby sem necessidade.
+        if (gameState === 'LOBBY') io.emit('lobbyUpdate', Object.values(players));
+        else if (gameState === 'BOSS_VOTE') broadcastVoteState();
+        if(Object.keys(players).length === 0) resetGame();
+    });
 });
 
 function spawnNextObjective() {
@@ -344,13 +697,10 @@ function spawnNextObjective() {
 
 function checkGameStart() {
     let pList = Object.values(players);
-    if(pList.length > 0 && pList.every(p => p.ready && p.avatar)) {
-        gameState = 'PLAYING'; startTime = Date.now();
-        gameManager.level = 1; gameManager.objectivesCollected = 0; gameManager.speakCooldown = 300;
-        npc.x = 1400; npc.y = 1450; npc.wpIndex = 0; npc.speechText = null; npc.speechTimer = 0; npc.speakCooldown = 150; npc.holdingId = null; npc.holdTimer = 0; npc.grabCooldown = 0;
-        spawnNextObjective();
-        io.emit('bossAlert', `Colete os ${gameManager.totalObjectives} itens espalhados e fuja do chefe!`);
-        io.emit('gameStart', map);
+    // Todo mundo "avançou" (pronto + avatar escolhido): em vez de começar a
+    // partida direto, agora abre a votação do boss.
+    if(gameState === 'LOBBY' && pList.length > 0 && pList.every(p => p.ready && p.avatar)) {
+        startBossVote();
     }
 }
 
@@ -371,6 +721,8 @@ function checkEndGameCondition() {
 
 function resetGame() {
     gameState = 'LOBBY';
+    bossVotes = {};
+    activeBossDef = DEFAULT_BOSS;
     boss = createBoss();
     npc.x = 1400; npc.y = 1450; npc.wpIndex = 0; npc.speechText = null; npc.speechTimer = 0; npc.speakCooldown = 150; npc.isMoving = false; npc.holdingId = null; npc.holdTimer = 0; npc.grabCooldown = 0;
     gameManager.level = 1; gameManager.globalEvent = 'NONE'; gameManager.eventTimer = 0;
@@ -416,7 +768,8 @@ setInterval(() => {
     if(boss.state !== 'CHASE') {
         gameManager.speakCooldown--;
         if(gameManager.speakCooldown <= 0) {
-            bossSay(BOSS_PATROL_PHRASES[Math.floor(Math.random() * BOSS_PATROL_PHRASES.length)]);
+            let patrolPhrases = (activeBossDef.phrasesPatrol && activeBossDef.phrasesPatrol.length) ? activeBossDef.phrasesPatrol : BOSS_PATROL_PHRASES;
+            bossSay(patrolPhrases[Math.floor(Math.random() * patrolPhrases.length)]);
             gameManager.speakCooldown = 300 + Math.floor(Math.random() * 300); // ~10 a 20s
         }
     }
@@ -650,13 +1003,13 @@ setInterval(() => {
     });
 
     if(closestP) {
-        if(boss.state !== 'CHASE') { io.emit('audioPlay', 'bossSpot'); bossSay("Te achei, nó cego!"); }
+        if(boss.state !== 'CHASE') { io.emit('audioPlay', 'bossSpot'); bossSay(activeBossDef.phraseSpot); }
         boss.state = 'CHASE'; boss.targetId = closestP.id;
     } else if(boss.state === 'CHASE') { boss.state = 'SEARCH'; boss.targetId = null; }
 
     pList.forEach(p => {
         if(!p.isDead && !p.isHidden && rectIntersect(p, boss)) {
-            p.isDead = true; p.isHidden = false; bossSay("Te peguei, nó cego!"); io.emit('playerCaught', { id: p.id, name: p.name }); checkEndGameCondition();
+            p.isDead = true; p.isHidden = false; bossSay(activeBossDef.phraseCatch); io.emit('playerCaught', { id: p.id, name: p.name }); checkEndGameCondition();
         }
     });
 
